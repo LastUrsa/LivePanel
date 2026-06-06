@@ -1,10 +1,12 @@
 # LivePanel
 
-LivePanel is a local desktop control panel for StreamSignal.
+LivePanel is a local desktop control panel for Starsong Tools.
 
-It can start StreamSignal in service mode, show StreamSignal status, switch the active StreamSignal profile, send stream announcements, and run the end-stream workflow without opening the full StreamSignal interface.
+The long-term intent is for LivePanel to provide a single place to see status, launch tools, and run common actions across the Starsong Tools suite. The current implementation supports StreamSignal first.
 
-## What LivePanel Does
+Today, LivePanel can start StreamSignal in service mode, show StreamSignal status, switch the active StreamSignal profile, send stream announcements, and run the end-stream workflow without opening the full StreamSignal interface.
+
+## Current StreamSignal Support
 
 - Starts StreamSignal with `--service`.
 - Opens StreamSignal with `--show` when the full UI is needed.
@@ -17,6 +19,10 @@ It can start StreamSignal in service mode, show StreamSignal status, switch the 
 - Provides a diagnostics view for troubleshooting the local StreamSignal connection.
 
 LivePanel does not store StreamSignal credentials, profiles, or stream destination settings. Those stay in StreamSignal.
+
+## Planned Direction
+
+LivePanel is expected to grow beyond StreamSignal and incorporate additional Starsong Tools as they expose compatible local integration points. StreamSignal support is the first implementation, not the full intended scope.
 
 ## StreamSignal Connection
 
@@ -125,12 +131,3 @@ $env:STREAMSIGNAL_ENV = "dev"
 $env:LIVEPANEL_STREAMSIGNAL_EXECUTABLE = "C:\path\to\StreamSignal.exe"
 .\build\bin\LivePanel.exe
 ```
-
-## Repository Hygiene
-
-Ignored generated or local files include:
-
-- `build/bin/`
-- `frontend/dist/`
-- `frontend/node_modules/`
-- `frontend/package.json.md5`
