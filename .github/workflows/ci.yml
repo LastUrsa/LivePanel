@@ -32,9 +32,6 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Run Go tests
-        run: go test ./...
-
       - name: Run frontend tests
         working-directory: frontend
         run: npm test
@@ -42,6 +39,9 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+
+      - name: Run Go tests
+        run: go test ./...
 
       - name: Audit frontend dependencies
         working-directory: frontend

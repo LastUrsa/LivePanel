@@ -129,7 +129,7 @@ Run Go vulnerability checks:
 govulncheck ./...
 ```
 
-The GitHub Actions CI workflow runs the Go tests, frontend tests, frontend build, frontend dependency audit, and `govulncheck` on pushes to `main` and on pull requests.
+The GitHub Actions CI workflow installs frontend dependencies, runs frontend tests, builds the frontend for Go embedding, runs Go tests, audits frontend dependencies, and runs `govulncheck` on pushes to `main` and on pull requests.
 
 ## Windows Build
 
