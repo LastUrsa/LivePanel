@@ -1,9 +1,9 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, vi } from 'vitest';
-import App, { Dashboard, ModulesPage } from './App';
+import App, { Dashboard, DiagnosticsPage, SettingsPage } from './App';
 import * as api from './lib/api/livepanel';
-import type { AnnounceStatus, CurrentProfile, EndStreamStatus, ModuleInfo } from './lib/api/livepanel';
+import type { AnnounceStatus, CurrentProfile, EndStreamStatus, ModuleExecutableConfig, ModuleInfo } from './lib/api/livepanel';
 
 vi.mock('./lib/api/livepanel', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./lib/api/livepanel')>();
@@ -12,9 +12,11 @@ vi.mock('./lib/api/livepanel', async (importOriginal) => {
     activateStreamSignalProfile: vi.fn(),
     activateTideReaderProfile: vi.fn(),
     announceStreamSignal: vi.fn(),
+    clearModuleExecutablePath: vi.fn(),
     confirmStreamSignalAnnouncement: vi.fn(),
     endStreamSignalStream: vi.fn(),
     getAutoStartManagedModules: vi.fn(),
+    getModuleExecutableConfigs: vi.fn(),
     getStreamSignalAnnounceStatus: vi.fn(),
     getStreamSignalCurrentProfile: vi.fn(),
     getStreamSignalEndStreamStatus: vi.fn(),
@@ -24,8 +26,10 @@ vi.mock('./lib/api/livepanel', async (importOriginal) => {
     getTideReaderProfiles: vi.fn(),
     listModules: vi.fn(),
     openModule: vi.fn(),
+    pickModuleExecutablePath: vi.fn(),
     refreshModules: vi.fn(),
     setAutoStartManagedModules: vi.fn(),
+    setModuleExecutablePath: vi.fn(),
     startModule: vi.fn(),
   };
 });
@@ -166,6 +170,20 @@ function tideReaderOverlayFixture(overrides: Partial<api.TideReaderOverlaySnapsh
     },
     overlayUrl: 'http://127.0.0.1:17655/overlay',
     coverUrl: 'http://127.0.0.1:17655/cover.jpg',
+    ...overrides,
+  };
+}
+
+function executableConfigFixture(overrides: Partial<ModuleExecutableConfig> = {}): ModuleExecutableConfig {
+  return {
+    id: 'streamsignal',
+    name: 'StreamSignal',
+    executablePath: '',
+    resolvedPath: 'C:/Tools/StreamSignal.exe',
+    pathSource: 'detected',
+    environmentKey: 'LIVEPANEL_STREAMSIGNAL_EXECUTABLE',
+    envLocked: false,
+    valid: true,
     ...overrides,
   };
 }
@@ -369,11 +387,58 @@ describe('Dashboard', () => {
   });
 });
 
-describe('ModulesPage', () => {
+describe('SettingsPage', () => {
+  it('renders and edits module executable locations', async () => {
+    const user = userEvent.setup();
+    const onSetExecutablePath = vi.fn();
+    const onClearExecutablePath = vi.fn();
+    const onPickExecutablePath = vi.fn();
+    render(
+      <SettingsPage
+        moduleConfigs={[executableConfigFixture(), executableConfigFixture({ id: 'tidereader', name: 'TideReader', resolvedPath: 'C:/Tools/TideReader.Desktop.exe' })]}
+        autoStartEnabled={true}
+        onToggleAutoStart={vi.fn()}
+        onSetExecutablePath={onSetExecutablePath}
+        onClearExecutablePath={onClearExecutablePath}
+        onPickExecutablePath={onPickExecutablePath}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Module Locations' })).toBeInTheDocument();
+    const pathInputs = screen.getAllByLabelText('Executable path');
+
+    await user.clear(pathInputs[0]);
+    await user.type(pathInputs[0], 'D:/Apps/StreamSignal.exe');
+    pathInputs[0].blur();
+    await user.click(screen.getAllByRole('button', { name: /Browse/i })[1]);
+
+    expect(onSetExecutablePath).toHaveBeenCalledWith('streamsignal', 'D:/Apps/StreamSignal.exe');
+    expect(onPickExecutablePath).toHaveBeenCalledWith('tidereader');
+  });
+
+  it('locks environment-provided executable paths', () => {
+    render(
+      <SettingsPage
+        moduleConfigs={[executableConfigFixture({ pathSource: 'environment', envLocked: true, executablePath: '', resolvedPath: 'C:/Env/StreamSignal.exe' })]}
+        autoStartEnabled={true}
+        onToggleAutoStart={vi.fn()}
+        onSetExecutablePath={vi.fn()}
+        onClearExecutablePath={vi.fn()}
+        onPickExecutablePath={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText('Executable path')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Browse/i })).toBeDisabled();
+  });
+});
+
+describe('DiagnosticsPage', () => {
   it('renders detailed read-only module information', () => {
     const actions = actionFixture();
     render(
-      <ModulesPage
+      <DiagnosticsPage
         modules={[
           moduleFixture({
             healthText: 'Pending Live Now recovery sessions need attention.',
@@ -381,13 +446,11 @@ describe('ModulesPage', () => {
             status: { state: 'warning', message: 'Pending Live Now recovery sessions need attention.', activeProfile: 'Music Stream' },
           }),
         ]}
-        autoStartEnabled={true}
-        onToggleAutoStart={vi.fn()}
         {...actions}
       />,
     );
 
-    expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Diagnostics' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Module Diagnostics' })).toBeInTheDocument();
     expect(screen.getByText('http://127.0.0.1:47020')).toBeInTheDocument();
     expect(screen.getAllByText('Pending Live Now recovery sessions need attention.')).toHaveLength(2);
@@ -397,7 +460,7 @@ describe('ModulesPage', () => {
 
   it('renders the modules empty state', () => {
     const actions = actionFixture();
-    render(<ModulesPage modules={[]} autoStartEnabled={true} onToggleAutoStart={vi.fn()} {...actions} />);
+    render(<DiagnosticsPage modules={[]} {...actions} />);
 
     expect(screen.getByText('No Starsong modules detected.')).toBeInTheDocument();
   });
@@ -409,6 +472,10 @@ describe('App workflows', () => {
     vi.mocked(api.refreshModules).mockResolvedValue([moduleFixture(), tideReaderModuleFixture()]);
     vi.mocked(api.listModules).mockResolvedValue([moduleFixture(), tideReaderModuleFixture()]);
     vi.mocked(api.getAutoStartManagedModules).mockResolvedValue(true);
+    vi.mocked(api.getModuleExecutableConfigs).mockResolvedValue([
+      executableConfigFixture(),
+      executableConfigFixture({ id: 'tidereader', name: 'TideReader', resolvedPath: 'C:/Tools/TideReader.Desktop.exe' }),
+    ]);
     vi.mocked(api.getStreamSignalProfiles).mockResolvedValue(['Gaming Stream', 'Music Stream']);
     vi.mocked(api.getStreamSignalCurrentProfile).mockResolvedValue({ id: 'gaming', name: 'Gaming Stream' });
     vi.mocked(api.getStreamSignalAnnounceStatus).mockResolvedValue({ lastRun: '', success: false });
@@ -422,8 +489,14 @@ describe('App workflows', () => {
     vi.mocked(api.confirmStreamSignalAnnouncement).mockResolvedValue({ success: true });
     vi.mocked(api.endStreamSignalStream).mockResolvedValue({ success: true });
     vi.mocked(api.openModule).mockResolvedValue([moduleFixture(), tideReaderModuleFixture()]);
+    vi.mocked(api.pickModuleExecutablePath).mockResolvedValue('D:/Apps/TideReader.Desktop.exe');
     vi.mocked(api.startModule).mockResolvedValue([moduleFixture(), tideReaderModuleFixture()]);
     vi.mocked(api.setAutoStartManagedModules).mockResolvedValue(false);
+    vi.mocked(api.setModuleExecutablePath).mockResolvedValue([
+      executableConfigFixture(),
+      executableConfigFixture({ id: 'tidereader', name: 'TideReader', executablePath: 'D:/Apps/TideReader.Desktop.exe', resolvedPath: 'D:/Apps/TideReader.Desktop.exe', pathSource: 'configured' }),
+    ]);
+    vi.mocked(api.clearModuleExecutablePath).mockResolvedValue([executableConfigFixture()]);
   });
 
   it('loads StreamSignal workflow data on startup', async () => {
@@ -474,6 +547,27 @@ describe('App workflows', () => {
     await waitFor(() => expect(api.activateTideReaderProfile).toHaveBeenCalledWith('Gaming Overlay'));
   });
 
+  it('updates module executable locations through settings', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Settings' }));
+    await user.click(await screen.findAllByRole('button', { name: /Browse/i }).then((buttons) => buttons[1]));
+
+    await waitFor(() => expect(api.pickModuleExecutablePath).toHaveBeenCalledWith('tidereader'));
+    expect(api.setModuleExecutablePath).toHaveBeenCalledWith('tidereader', 'D:/Apps/TideReader.Desktop.exe');
+  });
+
+  it('opens diagnostics as a top-level page', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Diagnostics' }));
+
+    expect(await screen.findByRole('heading', { name: 'Diagnostics' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Module Diagnostics' })).toBeInTheDocument();
+  });
+
   it('handles go-live confirmation through the full app wiring', async () => {
     const user = userEvent.setup();
     vi.mocked(api.announceStreamSignal).mockResolvedValue({
@@ -505,7 +599,7 @@ describe('App workflows', () => {
     await user.keyboard('{Enter}');
 
     expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Module Diagnostics' })).toBeInTheDocument();
-    expect(screen.getByText('http://127.0.0.1:47020')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Module Locations' })).toBeInTheDocument();
+    expect(screen.getByText('C:/Tools/StreamSignal.exe')).toBeInTheDocument();
   });
 });

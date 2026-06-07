@@ -5,7 +5,9 @@ import {
   ConfirmStreamSignalAnnouncement,
   EndStreamSignalStream,
   GetAutoStartManagedModules,
+  ClearModuleExecutablePath,
   GetModules,
+  GetModuleExecutableConfigs,
   GetStreamSignalAnnounceStatus,
   GetStreamSignalCurrentProfile,
   GetStreamSignalEndStreamStatus,
@@ -14,8 +16,10 @@ import {
   GetTideReaderOverlaySnapshot,
   GetTideReaderProfiles,
   OpenModule,
+  PickModuleExecutablePath,
   RefreshModules,
   SetAutoStartManagedModules,
+  SetModuleExecutablePath,
   StartModule,
 } from '../../../wailsjs/go/main/App';
 
@@ -85,6 +89,18 @@ export type TideReaderOverlaySnapshot = {
   error?: string;
 };
 
+export type ModuleExecutableConfig = {
+  id: string;
+  name: string;
+  executablePath: string;
+  resolvedPath: string;
+  pathSource: string;
+  environmentKey: string;
+  envLocked: boolean;
+  valid: boolean;
+  error?: string;
+};
+
 export function listModules(): Promise<ModuleInfo[]> {
   return GetModules();
 }
@@ -107,6 +123,22 @@ export function getAutoStartManagedModules(): Promise<boolean> {
 
 export function setAutoStartManagedModules(enabled: boolean): Promise<boolean> {
   return SetAutoStartManagedModules(enabled);
+}
+
+export function getModuleExecutableConfigs(): Promise<ModuleExecutableConfig[]> {
+  return GetModuleExecutableConfigs();
+}
+
+export function setModuleExecutablePath(id: string, executablePath: string): Promise<ModuleExecutableConfig[]> {
+  return SetModuleExecutablePath(id, executablePath);
+}
+
+export function clearModuleExecutablePath(id: string): Promise<ModuleExecutableConfig[]> {
+  return ClearModuleExecutablePath(id);
+}
+
+export function pickModuleExecutablePath(id: string): Promise<string> {
+  return PickModuleExecutablePath(id);
 }
 
 export async function getStreamSignalProfiles(): Promise<string[]> {

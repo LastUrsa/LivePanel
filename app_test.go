@@ -4,6 +4,7 @@ import (
 	"LivePanel/internal/modules"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -72,6 +73,66 @@ func TestTideReaderExecutableCandidatesPreferLocalBuild(t *testing.T) {
 	want := filepath.Clean(filepath.Join("..", "TideReader", "build", "bin", executable))
 	if candidates[0] != want {
 		t.Fatalf("expected first candidate %q, got %q", want, candidates[0])
+	}
+}
+
+func TestModuleExecutableConfigUsesSavedPathAfterEnvironment(t *testing.T) {
+	tmp := t.TempDir()
+	savedPath := filepath.Join(tmp, "StreamSignal.exe")
+	envPath := filepath.Join(tmp, "StreamSignal-env.exe")
+	if err := os.WriteFile(savedPath, []byte("stub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(envPath, []byte("stub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LIVEPANEL_STREAMSIGNAL_EXECUTABLE", envPath)
+
+	definition, _ := moduleDefinitionByID("streamsignal")
+	config := moduleExecutableConfig(definition, ModuleConfig{ExecutablePath: savedPath})
+
+	if config.ResolvedPath != envPath || config.PathSource != "environment" || !config.EnvLocked {
+		t.Fatalf("expected environment executable to win, got %+v", config)
+	}
+}
+
+func TestModuleExecutableConfigUsesSavedPath(t *testing.T) {
+	tmp := t.TempDir()
+	savedPath := filepath.Join(tmp, "TideReader.Desktop.exe")
+	if err := os.WriteFile(savedPath, []byte("stub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	definition, _ := moduleDefinitionByID("tidereader")
+	config := moduleExecutableConfig(definition, ModuleConfig{ExecutablePath: savedPath})
+
+	if config.ResolvedPath != savedPath || config.PathSource != "configured" || !config.Valid {
+		t.Fatalf("expected saved executable path to be used, got %+v", config)
+	}
+}
+
+func TestSetModuleExecutablePathPersistsAndClears(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	app := NewApp()
+	app.configs = NewConfigStoreAt(configPath)
+	app.config = AppConfig{Modules: map[string]ModuleConfig{}}
+
+	app.SetModuleExecutablePath("tidereader", "C:/Tools/TideReader.Desktop.exe")
+	loaded, err := app.configs.Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if loaded.Modules["tidereader"].ExecutablePath != "C:/Tools/TideReader.Desktop.exe" {
+		t.Fatalf("expected saved TideReader executable path, got %+v", loaded)
+	}
+
+	app.ClearModuleExecutablePath("tidereader")
+	loaded, err = app.configs.Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if _, ok := loaded.Modules["tidereader"]; ok {
+		t.Fatalf("expected TideReader override to be cleared, got %+v", loaded)
 	}
 }
 

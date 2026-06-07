@@ -19,9 +19,11 @@ import {
   activateStreamSignalProfile,
   activateTideReaderProfile,
   announceStreamSignal,
+  clearModuleExecutablePath,
   confirmStreamSignalAnnouncement,
   endStreamSignalStream,
   getAutoStartManagedModules,
+  getModuleExecutableConfigs,
   getStreamSignalAnnounceStatus,
   getStreamSignalCurrentProfile,
   getStreamSignalEndStreamStatus,
@@ -31,13 +33,16 @@ import {
   getTideReaderProfiles,
   listModules,
   openModule,
+  pickModuleExecutablePath,
   refreshModules,
   setAutoStartManagedModules,
+  setModuleExecutablePath,
   startModule,
   type AnnounceResult,
   type AnnounceStatus,
   type CurrentProfile,
   type EndStreamStatus,
+  type ModuleExecutableConfig,
   type ModuleInfo,
   type TideReaderOverlaySnapshot,
 } from './lib/api/livepanel';
@@ -45,7 +50,7 @@ import './App.css';
 import streamSignalIcon from './assets/images/StreamSignalIcon.png';
 import tideReaderIcon from './assets/images/TideReaderIcon.png';
 
-type Page = 'dashboard' | 'settings';
+type Page = 'dashboard' | 'settings' | 'diagnostics';
 
 function healthLabel(module: ModuleInfo) {
   if (module.error?.startsWith('Failed to Start')) {
@@ -638,14 +643,21 @@ function ConfirmationModal({ workflow }: { workflow: StreamSignalWorkflow }) {
   );
 }
 
-export function ModulesPage({
-  modules,
+type SettingsActions = {
+  onToggleAutoStart: (enabled: boolean) => void;
+  onSetExecutablePath: (id: string, executablePath: string) => void;
+  onClearExecutablePath: (id: string) => void;
+  onPickExecutablePath: (id: string) => void;
+};
+
+export function SettingsPage({
+  moduleConfigs,
   autoStartEnabled,
   onToggleAutoStart,
-  onStart,
-  onOpen,
-  onRefresh,
-}: { modules: ModuleInfo[]; autoStartEnabled: boolean; onToggleAutoStart: (enabled: boolean) => void } & ModuleActions) {
+  onSetExecutablePath,
+  onClearExecutablePath,
+  onPickExecutablePath,
+}: { moduleConfigs: ModuleExecutableConfig[]; autoStartEnabled: boolean } & SettingsActions) {
   return (
     <main className="content" aria-labelledby="settings-title">
       <div className="page-heading">
@@ -655,13 +667,14 @@ export function ModulesPage({
         </div>
       </div>
 
-      <section className="settings-section" aria-labelledby="module-management-title">
+      <section className="settings-section" aria-labelledby="module-locations-title">
         <div className="section-heading">
           <div>
             <p className="eyebrow">Stream tools</p>
-            <h2 id="module-management-title">Module Management</h2>
+            <h2 id="module-locations-title">Module Locations</h2>
           </div>
         </div>
+
         <div className="settings-panel">
           <label className="setting-toggle">
             <input
@@ -672,12 +685,107 @@ export function ModulesPage({
             Auto-start managed modules
           </label>
         </div>
+
+        <div className="module-location-grid">
+          {moduleConfigs.map((config) => (
+            <ModuleLocationCard
+              config={config}
+              key={config.id}
+              onSetExecutablePath={onSetExecutablePath}
+              onClearExecutablePath={onClearExecutablePath}
+              onPickExecutablePath={onPickExecutablePath}
+            />
+          ))}
+        </div>
       </section>
+    </main>
+  );
+}
+
+function ModuleLocationCard({
+  config,
+  onSetExecutablePath,
+  onClearExecutablePath,
+  onPickExecutablePath,
+}: { config: ModuleExecutableConfig } & Pick<SettingsActions, 'onSetExecutablePath' | 'onClearExecutablePath' | 'onPickExecutablePath'>) {
+  const [draftPath, setDraftPath] = useState(config.executablePath);
+  useEffect(() => {
+    setDraftPath(config.executablePath);
+  }, [config.executablePath]);
+  const icon = config.id === 'tidereader' ? tideReaderIcon : streamSignalIcon;
+  const sourceLabel = config.pathSource === 'environment' ? 'Environment' : config.pathSource === 'configured' ? 'Configured' : config.pathSource === 'detected' ? 'Detected' : 'Fallback';
+  function commitDraft() {
+    if (draftPath !== config.executablePath) {
+      onSetExecutablePath(config.id, draftPath);
+    }
+  }
+  return (
+    <article className="module-location-card">
+      <div className="module-card-topline">
+        <div>
+          <h2>
+            <img className="module-title-icon" src={icon} alt="" aria-hidden="true" />
+            {config.name}
+          </h2>
+          <p>{sourceLabel}{config.envLocked ? ` via ${config.environmentKey}` : ''}</p>
+        </div>
+        <StatusPill label={config.valid ? sourceLabel : 'Invalid path'} tone={config.valid ? 'info' : 'error'} />
+      </div>
+
+      <label className="path-field">
+        <span>Executable path</span>
+        <input
+          value={draftPath}
+          placeholder={config.resolvedPath || 'Auto-detect executable'}
+          disabled={config.envLocked}
+          onBlur={commitDraft}
+          onChange={(event) => setDraftPath(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.currentTarget.blur();
+            }
+          }}
+        />
+      </label>
+
+      <div className="path-meta">
+        <span>{config.resolvedPath || 'No executable resolved'}</span>
+        {config.error ? <strong>{config.error}</strong> : null}
+      </div>
+
+      <div className="secondary-actions">
+        <button type="button" onClick={() => onPickExecutablePath(config.id)} disabled={config.envLocked}>
+          <ExternalLink aria-hidden="true" />
+          Browse
+        </button>
+        <button type="button" onClick={() => onClearExecutablePath(config.id)} disabled={config.envLocked || !config.executablePath}>
+          <XCircle aria-hidden="true" />
+          Clear
+        </button>
+      </div>
+    </article>
+  );
+}
+
+export function DiagnosticsPage({
+  modules,
+  onStart,
+  onOpen,
+  onRefresh,
+}: { modules: ModuleInfo[] } & ModuleActions) {
+  return (
+    <main className="content" aria-labelledby="diagnostics-title">
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">Advanced support</p>
+          <h1 id="diagnostics-title">Diagnostics</h1>
+        </div>
+      </div>
 
       <section className="settings-section" aria-labelledby="module-diagnostics-title">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Advanced support</p>
+            <p className="eyebrow">Module state</p>
             <h2 id="module-diagnostics-title">Module Diagnostics</h2>
           </div>
         </div>
@@ -809,6 +917,7 @@ export default function App() {
   const [pendingConfirmation, setPendingConfirmation] = useState<AnnounceResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [autoStartEnabled, setAutoStartEnabled] = useState(true);
+  const [moduleConfigs, setModuleConfigs] = useState<ModuleExecutableConfig[]>([]);
 
   async function loadStreamSignalWorkflow(nextModules: ModuleInfo[]) {
     const module = streamSignalModule(nextModules);
@@ -872,8 +981,12 @@ export default function App() {
 
   async function load(refresh = false) {
     setLoading(true);
-    const next = refresh ? await refreshModules() : await listModules();
+    const [next, configs] = await Promise.all([
+      refresh ? refreshModules() : listModules(),
+      getModuleExecutableConfigs(),
+    ]);
     setModules(next);
+    setModuleConfigs(configs);
     await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next)]);
     setLoading(false);
   }
@@ -900,6 +1013,7 @@ export default function App() {
       setLoading(true);
       const enabled = await getAutoStartManagedModules();
       setAutoStartEnabled(enabled);
+      setModuleConfigs(await getModuleExecutableConfigs());
       let next = await refreshModules();
       if (enabled) {
         next = await startAutoStartModules(next);
@@ -939,6 +1053,26 @@ export default function App() {
     setModules(next);
     await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next)]);
     setLoading(false);
+  }
+
+  async function updateModuleExecutablePath(id: string, executablePath: string) {
+    const configs = await setModuleExecutablePath(id, executablePath);
+    setModuleConfigs(configs);
+    await load(true);
+  }
+
+  async function clearModuleExecutable(id: string) {
+    const configs = await clearModuleExecutablePath(id);
+    setModuleConfigs(configs);
+    await load(true);
+  }
+
+  async function pickModuleExecutable(id: string) {
+    const path = await pickModuleExecutablePath(id);
+    if (!path) {
+      return;
+    }
+    await updateModuleExecutablePath(id, path);
   }
 
   const workflow: StreamSignalWorkflow = {
@@ -1043,6 +1177,10 @@ export default function App() {
               <Settings aria-hidden="true" />
               Settings
             </button>
+            <button className={page === 'diagnostics' ? 'active' : ''} onClick={() => setPage('diagnostics')}>
+              <Server aria-hidden="true" />
+              Diagnostics
+            </button>
           </nav>
           <button className="icon-button" onClick={() => void load(true)} aria-label="Refresh modules" title="Refresh modules">
             <RefreshCw aria-hidden="true" />
@@ -1059,11 +1197,18 @@ export default function App() {
             onOpen={(id) => void runAction(() => openModule(id))}
             onRefresh={() => void load(true)}
           />
-        ) : (
-          <ModulesPage
-            modules={modules}
+        ) : page === 'settings' ? (
+          <SettingsPage
+            moduleConfigs={moduleConfigs}
             autoStartEnabled={autoStartEnabled}
             onToggleAutoStart={(enabled) => void toggleAutoStart(enabled)}
+            onSetExecutablePath={(id, executablePath) => void updateModuleExecutablePath(id, executablePath)}
+            onClearExecutablePath={(id) => void clearModuleExecutable(id)}
+            onPickExecutablePath={(id) => void pickModuleExecutable(id)}
+          />
+        ) : (
+          <DiagnosticsPage
+            modules={modules}
             onStart={(id) => void runAction(() => startModule(id))}
             onOpen={(id) => void runAction(() => openModule(id))}
             onRefresh={() => void load(true)}

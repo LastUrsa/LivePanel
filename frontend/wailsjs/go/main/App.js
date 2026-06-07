@@ -30,6 +30,10 @@ export function GetModules() {
   return window['go']['main']['App']['GetModules']();
 }
 
+export function GetModuleExecutableConfigs() {
+  return window['go']['main']['App']['GetModuleExecutableConfigs']();
+}
+
 export function GetStreamSignalAnnounceStatus() {
   return window['go']['main']['App']['GetStreamSignalAnnounceStatus']();
 }
@@ -62,12 +66,24 @@ export function OpenModule(arg1) {
   return window['go']['main']['App']['OpenModule'](arg1);
 }
 
+export function PickModuleExecutablePath(arg1) {
+  return window['go']['main']['App']['PickModuleExecutablePath'](arg1);
+}
+
 export function RefreshModules() {
   return window['go']['main']['App']['RefreshModules']();
 }
 
+export function ClearModuleExecutablePath(arg1) {
+  return window['go']['main']['App']['ClearModuleExecutablePath'](arg1);
+}
+
 export function SetAutoStartManagedModules(arg1) {
   return window['go']['main']['App']['SetAutoStartManagedModules'](arg1);
+}
+
+export function SetModuleExecutablePath(arg1, arg2) {
+  return window['go']['main']['App']['SetModuleExecutablePath'](arg1, arg2);
 }
 
 export function StartModule(arg1) {

@@ -65,6 +65,15 @@ http://127.0.0.1:17655/overlay-settings.json
 
 ## Configuration
 
+LivePanel's Settings page includes **Module Locations** controls for StreamSignal, TideReader, and future catalogued modules. Users can paste an executable path, browse for the executable, or clear a saved override to return to auto-detection.
+
+Executable path resolution order is:
+
+1. Environment variable override.
+2. Saved LivePanel module location.
+3. Auto-detected local/dev install path.
+4. Executable-name fallback.
+
 Optional environment variables:
 
 | Variable | Purpose |
@@ -74,6 +83,7 @@ Optional environment variables:
 | `LIVEPANEL_TIDEREADER_EXECUTABLE` | Explicit path to `TideReader.Desktop.exe`. |
 | `LIVEPANEL_TIDEREADER_ENDPOINT` | Explicit local TideReader SIP endpoint. |
 | `LIVEPANEL_TIDEREADER_OVERLAY_URL` | Explicit local TideReader overlay URL. |
+| `LIVEPANEL_CONFIG_PATH` | Explicit path for LivePanel's persisted config JSON. Mostly useful for tests/dev. |
 | `STREAMSIGNAL_ENV` | Passed through to StreamSignal when LivePanel starts it. Use `dev` for the StreamSignal dev data store. |
 
 Endpoint and overlay URL overrides must be local HTTP, such as:
@@ -84,6 +94,8 @@ http://localhost:47020
 ```
 
 Remote hosts are rejected.
+
+Diagnostics are intentionally separate from Settings. Use the Diagnostics tab for module health, SIP endpoints, resolved executable paths, capabilities, and raw status payloads.
 
 ## Development
 

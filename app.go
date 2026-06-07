@@ -14,12 +14,15 @@ import (
 
 	"LivePanel/internal/modules"
 	"LivePanel/internal/sip"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type App struct {
 	ctx       context.Context
 	service   *modules.Service
 	autoStart bool
+	config    AppConfig
+	configs   *ConfigStore
 }
 
 type TideReaderOverlaySnapshot struct {
@@ -31,10 +34,36 @@ type TideReaderOverlaySnapshot struct {
 	Error      string                 `json:"error,omitempty"`
 }
 
+type ModuleExecutableConfig struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	ExecutablePath string `json:"executablePath"`
+	ResolvedPath   string `json:"resolvedPath"`
+	PathSource     string `json:"pathSource"`
+	EnvironmentKey string `json:"environmentKey"`
+	EnvLocked      bool   `json:"envLocked"`
+	Valid          bool   `json:"valid"`
+	Error          string `json:"error,omitempty"`
+}
+
+type moduleDefinition struct {
+	ID             string
+	Name           string
+	ExecutableEnv  string
+	EndpointEnv    string
+	ExecutableName string
+	Endpoints      []string
+	Candidates     func() []string
+}
+
 func NewApp() *App {
+	store := NewConfigStore()
+	config, _ := store.Load()
 	return &App{
-		service:   modules.NewService(defaultProviders()),
+		service:   modules.NewService(defaultProviders(config.Modules)),
 		autoStart: true,
+		config:    config,
+		configs:   store,
 	}
 }
 
@@ -266,38 +295,125 @@ func (a *App) SetAutoStartManagedModules(enabled bool) bool {
 	return a.autoStart
 }
 
-func defaultProviders() []modules.Provider {
-	streamSignal := modules.RegistryEntry{
-		ID:         "streamsignal",
-		Name:       "StreamSignal",
-		Executable: configuredStreamSignalExecutable(),
-		Endpoints:  configuredStreamSignalEndpoints(),
-		AutoStart:  true,
+func (a *App) GetModuleExecutableConfigs() []ModuleExecutableConfig {
+	return moduleExecutableConfigs(a.config.Modules)
+}
+
+func (a *App) SetModuleExecutablePath(id string, executablePath string) []ModuleExecutableConfig {
+	if !knownModuleID(id) {
+		return a.GetModuleExecutableConfigs()
 	}
-	tideReader := modules.RegistryEntry{
-		ID:         "tidereader",
-		Name:       "TideReader",
-		Executable: configuredTideReaderExecutable(),
-		Endpoints:  configuredTideReaderEndpoints(),
-		AutoStart:  true,
+	executablePath = strings.TrimSpace(executablePath)
+	if a.config.Modules == nil {
+		a.config.Modules = map[string]ModuleConfig{}
 	}
-	return []modules.Provider{
-		modules.NewManagedSIPProvider(streamSignal, modules.NewOwnedProcessLauncher(), 900*time.Millisecond),
-		modules.NewManagedSIPProvider(tideReader, modules.NewOwnedProcessLauncher(), 900*time.Millisecond),
+	if executablePath == "" {
+		delete(a.config.Modules, id)
+	} else {
+		a.config.Modules[id] = ModuleConfig{ExecutablePath: executablePath}
+	}
+	_ = a.configs.Save(a.config)
+	a.rebuildProviders()
+	return a.GetModuleExecutableConfigs()
+}
+
+func (a *App) ClearModuleExecutablePath(id string) []ModuleExecutableConfig {
+	return a.SetModuleExecutablePath(id, "")
+}
+
+func (a *App) PickModuleExecutablePath(id string) string {
+	definition, ok := moduleDefinitionByID(id)
+	if !ok || a.ctx == nil {
+		return ""
+	}
+	path, err := wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title: "Select " + definition.Name + " executable",
+	})
+	if err != nil {
+		return ""
+	}
+	return path
+}
+
+func (a *App) rebuildProviders() {
+	a.service.SetProviders(defaultProviders(a.config.Modules))
+}
+
+func defaultProviders(configs ...map[string]ModuleConfig) []modules.Provider {
+	moduleConfigs := map[string]ModuleConfig{}
+	if len(configs) > 0 && configs[0] != nil {
+		moduleConfigs = configs[0]
+	}
+	providers := make([]modules.Provider, 0, len(moduleDefinitions()))
+	for _, definition := range moduleDefinitions() {
+		entry := modules.RegistryEntry{
+			ID:         definition.ID,
+			Name:       definition.Name,
+			Executable: executableForDefinition(definition, moduleConfigs[definition.ID]),
+			Endpoints:  endpointsForDefinition(definition),
+			AutoStart:  true,
+		}
+		providers = append(providers, modules.NewManagedSIPProvider(entry, modules.NewOwnedProcessLauncher(), 900*time.Millisecond))
+	}
+	return providers
+}
+
+func moduleDefinitions() []moduleDefinition {
+	return []moduleDefinition{
+		{
+			ID:             "streamsignal",
+			Name:           "StreamSignal",
+			ExecutableEnv:  "LIVEPANEL_STREAMSIGNAL_EXECUTABLE",
+			EndpointEnv:    "LIVEPANEL_STREAMSIGNAL_ENDPOINT",
+			ExecutableName: "StreamSignal.exe",
+			Endpoints:      localEndpoints(47020, 47029),
+			Candidates:     streamSignalExecutableCandidates,
+		},
+		{
+			ID:             "tidereader",
+			Name:           "TideReader",
+			ExecutableEnv:  "LIVEPANEL_TIDEREADER_EXECUTABLE",
+			EndpointEnv:    "LIVEPANEL_TIDEREADER_ENDPOINT",
+			ExecutableName: "TideReader.Desktop.exe",
+			Endpoints:      localEndpoints(47030, 47039),
+			Candidates:     tideReaderExecutableCandidates,
+		},
 	}
 }
 
+func moduleDefinitionByID(id string) (moduleDefinition, bool) {
+	for _, definition := range moduleDefinitions() {
+		if definition.ID == id {
+			return definition, true
+		}
+	}
+	return moduleDefinition{}, false
+}
+
+func knownModuleID(id string) bool {
+	_, ok := moduleDefinitionByID(id)
+	return ok
+}
+
 func configuredStreamSignalExecutable() string {
-	if configured := strings.TrimSpace(os.Getenv("LIVEPANEL_STREAMSIGNAL_EXECUTABLE")); configured != "" {
+	definition, _ := moduleDefinitionByID("streamsignal")
+	return executableForDefinition(definition, ModuleConfig{})
+}
+
+func executableForDefinition(definition moduleDefinition, config ModuleConfig) string {
+	if configured := strings.TrimSpace(os.Getenv(definition.ExecutableEnv)); configured != "" {
+		return configured
+	}
+	if configured := strings.TrimSpace(config.ExecutablePath); configured != "" {
 		return configured
 	}
 
-	for _, candidate := range streamSignalExecutableCandidates() {
+	for _, candidate := range definition.Candidates() {
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 			return candidate
 		}
 	}
-	return "StreamSignal.exe"
+	return definition.ExecutableName
 }
 
 func streamSignalExecutableCandidates() []string {
@@ -336,30 +452,13 @@ func localStreamSignalBuildCandidates() []string {
 }
 
 func configuredStreamSignalEndpoints() []string {
-	if configured := strings.TrimSpace(os.Getenv("LIVEPANEL_STREAMSIGNAL_ENDPOINT")); configured != "" {
-		if sip.IsLocalEndpoint(configured) {
-			return []string{configured}
-		}
-	}
-
-	endpoints := make([]string, 0, 10)
-	for port := 47020; port <= 47029; port++ {
-		endpoints = append(endpoints, sip.LocalEndpoint(port))
-	}
-	return endpoints
+	definition, _ := moduleDefinitionByID("streamsignal")
+	return endpointsForDefinition(definition)
 }
 
 func configuredTideReaderExecutable() string {
-	if configured := strings.TrimSpace(os.Getenv("LIVEPANEL_TIDEREADER_EXECUTABLE")); configured != "" {
-		return configured
-	}
-
-	for _, candidate := range tideReaderExecutableCandidates() {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate
-		}
-	}
-	return "TideReader.Desktop.exe"
+	definition, _ := moduleDefinitionByID("tidereader")
+	return executableForDefinition(definition, ModuleConfig{})
 }
 
 func tideReaderExecutableCandidates() []string {
@@ -390,17 +489,69 @@ func tideReaderExecutableCandidates() []string {
 }
 
 func configuredTideReaderEndpoints() []string {
-	if configured := strings.TrimSpace(os.Getenv("LIVEPANEL_TIDEREADER_ENDPOINT")); configured != "" {
+	definition, _ := moduleDefinitionByID("tidereader")
+	return endpointsForDefinition(definition)
+}
+
+func endpointsForDefinition(definition moduleDefinition) []string {
+	if configured := strings.TrimSpace(os.Getenv(definition.EndpointEnv)); configured != "" {
 		if sip.IsLocalEndpoint(configured) {
 			return []string{configured}
 		}
 	}
+	return append([]string(nil), definition.Endpoints...)
+}
 
+func localEndpoints(first int, last int) []string {
 	endpoints := make([]string, 0, 10)
-	for port := 47030; port <= 47039; port++ {
+	for port := first; port <= last; port++ {
 		endpoints = append(endpoints, sip.LocalEndpoint(port))
 	}
 	return endpoints
+}
+
+func moduleExecutableConfigs(configs map[string]ModuleConfig) []ModuleExecutableConfig {
+	out := make([]ModuleExecutableConfig, 0, len(moduleDefinitions()))
+	for _, definition := range moduleDefinitions() {
+		out = append(out, moduleExecutableConfig(definition, configs[definition.ID]))
+	}
+	return out
+}
+
+func moduleExecutableConfig(definition moduleDefinition, config ModuleConfig) ModuleExecutableConfig {
+	envValue := strings.TrimSpace(os.Getenv(definition.ExecutableEnv))
+	configValue := strings.TrimSpace(config.ExecutablePath)
+	executable := executableForDefinition(definition, config)
+	resolved, valid := resolveExecutable(executable)
+	source := "fallback"
+	envLocked := false
+	if envValue != "" {
+		source = "environment"
+		envLocked = true
+	} else if configValue != "" {
+		source = "configured"
+	} else if resolved != "" && resolved != definition.ExecutableName {
+		source = "detected"
+	}
+	errText := ""
+	if !valid && executable != "" && source == "configured" {
+		errText = "Configured executable path does not point to a file."
+	}
+	return ModuleExecutableConfig{
+		ID:             definition.ID,
+		Name:           definition.Name,
+		ExecutablePath: configValue,
+		ResolvedPath:   resolved,
+		PathSource:     source,
+		EnvironmentKey: definition.ExecutableEnv,
+		EnvLocked:      envLocked,
+		Valid:          valid,
+		Error:          errText,
+	}
+}
+
+func resolveExecutable(executable string) (string, bool) {
+	return modules.ExecLauncher{}.Resolve(executable)
 }
 
 func (a *App) tideReaderOverlayURL() string {

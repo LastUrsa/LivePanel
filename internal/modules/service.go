@@ -45,6 +45,12 @@ func (s *Service) Register(provider Provider) {
 	s.providers = append(s.providers, provider)
 }
 
+func (s *Service) SetProviders(providers []Provider) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.providers = append([]Provider(nil), providers...)
+}
+
 func (s *Service) List(_ context.Context) []Module {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

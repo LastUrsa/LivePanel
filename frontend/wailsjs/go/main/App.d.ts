@@ -17,6 +17,8 @@ export function GetAutoStartManagedModules():Promise<boolean>;
 
 export function GetModules():Promise<Array<modules.Module>>;
 
+export function GetModuleExecutableConfigs():Promise<Array<any>>;
+
 export function GetStreamSignalAnnounceStatus():Promise<sip.AnnounceStatusResponse>;
 
 export function GetStreamSignalCurrentProfile():Promise<sip.CurrentProfileResponse>;
@@ -33,8 +35,14 @@ export function GetTideReaderProfiles():Promise<sip.ProfilesResponse>;
 
 export function OpenModule(arg1:string):Promise<Array<modules.Module>>;
 
+export function PickModuleExecutablePath(arg1:string):Promise<string>;
+
 export function RefreshModules():Promise<Array<modules.Module>>;
 
+export function ClearModuleExecutablePath(arg1:string):Promise<Array<any>>;
+
 export function SetAutoStartManagedModules(arg1:boolean):Promise<boolean>;
+
+export function SetModuleExecutablePath(arg1:string,arg2:string):Promise<Array<any>>;
 
 export function StartModule(arg1:string):Promise<Array<modules.Module>>;
