@@ -1,7 +1,7 @@
 import {
   AlertTriangle,
-  Blocks,
   CheckCircle2,
+  Copy,
   ExternalLink,
   Gauge,
   Info,
@@ -10,13 +10,14 @@ import {
   RefreshCw,
   Radio,
   Server,
+  Settings,
   Square,
-  UserRound,
   XCircle,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import {
   activateStreamSignalProfile,
+  activateTideReaderProfile,
   announceStreamSignal,
   confirmStreamSignalAnnouncement,
   endStreamSignalStream,
@@ -25,6 +26,9 @@ import {
   getStreamSignalCurrentProfile,
   getStreamSignalEndStreamStatus,
   getStreamSignalProfiles,
+  getTideReaderCurrentProfile,
+  getTideReaderOverlaySnapshot,
+  getTideReaderProfiles,
   listModules,
   openModule,
   refreshModules,
@@ -35,10 +39,13 @@ import {
   type CurrentProfile,
   type EndStreamStatus,
   type ModuleInfo,
+  type TideReaderOverlaySnapshot,
 } from './lib/api/livepanel';
 import './App.css';
+import streamSignalIcon from './assets/images/StreamSignalIcon.png';
+import tideReaderIcon from './assets/images/TideReaderIcon.png';
 
-type Page = 'dashboard' | 'diagnostics';
+type Page = 'dashboard' | 'settings';
 
 function healthLabel(module: ModuleInfo) {
   if (module.error?.startsWith('Failed to Start')) {
@@ -88,15 +95,29 @@ type StreamSignalWorkflow = {
   announceStatus: AnnounceStatus;
   endStreamStatus: EndStreamStatus;
   selectedProfile: string;
-  message: string;
   busy: boolean;
   pendingConfirmation: AnnounceResult | null;
   onSelectProfile: (profile: string) => void;
-  onActivateProfile: () => void;
   onGoLive: () => void;
   onConfirmGoLive: () => void;
   onCancelConfirmation: () => void;
   onEndStream: () => void;
+};
+
+type TideReaderWorkflow = {
+  profiles: string[];
+  currentProfile: CurrentProfile;
+  selectedProfile: string;
+  busy: boolean;
+  onSelectProfile: (profile: string) => void;
+};
+
+const emptyTideReaderOverlay: TideReaderOverlaySnapshot = {
+  available: false,
+  nowPlaying: {},
+  settings: {},
+  overlayUrl: '',
+  coverUrl: '',
 };
 
 function emptyWorkflowState() {
@@ -105,6 +126,13 @@ function emptyWorkflowState() {
     currentProfile: { id: '', name: '' } as CurrentProfile,
     announceStatus: { lastRun: '', success: false } as AnnounceStatus,
     endStreamStatus: { lastRun: '', success: false } as EndStreamStatus,
+  };
+}
+
+function emptyProfileWorkflowState() {
+  return {
+    profiles: [] as string[],
+    currentProfile: { id: '', name: '' } as CurrentProfile,
   };
 }
 
@@ -123,9 +151,125 @@ function streamSignalModule(modules: ModuleInfo[]) {
   return modules.find((module) => module.id === 'streamsignal') ?? null;
 }
 
+function tideReaderModule(modules: ModuleInfo[]) {
+  return modules.find((module) => module.id === 'tidereader') ?? null;
+}
+
 function statusValue(status: Record<string, unknown>, key: string) {
   const value = status?.[key];
   return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : '';
+}
+
+function recordValue(record: Record<string, unknown>, key: string) {
+  const value = record?.[key];
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function textValue(record: Record<string, unknown>, key: string, fallback = '') {
+  const value = record?.[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function numberValue(record: Record<string, unknown>, key: string, fallback: number) {
+  const value = record?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function booleanValue(record: Record<string, unknown>, key: string, fallback: boolean) {
+  const value = record?.[key];
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function truncateText(value: string, maxCharacters: number) {
+  if (!value || value.length <= maxCharacters) {
+    return value;
+  }
+  return `${value.slice(0, Math.max(0, maxCharacters - 1)).trimEnd()}...`;
+}
+
+function hexToRgb(hex: string) {
+  const normalized = hex.replace('#', '').trim();
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return null;
+  }
+  return {
+    r: parseInt(normalized.slice(0, 2), 16),
+    g: parseInt(normalized.slice(2, 4), 16),
+    b: parseInt(normalized.slice(4, 6), 16),
+  };
+}
+
+function withAlpha(hex: string, opacity: number) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) {
+    return `rgba(50, 51, 79, ${opacity})`;
+  }
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity})`;
+}
+
+function overlayBackground(settings: Record<string, unknown>) {
+  const container = recordValue(settings, 'overlayContainerStyle');
+  const opacity = numberValue(container, 'opacity', 0.86);
+  if (textValue(container, 'backgroundMode', 'solid').toLowerCase() === 'gradient') {
+    const gradient = recordValue(container, 'gradient');
+    const color1 = withAlpha(textValue(gradient, 'color1Hex', '#3B3187'), opacity);
+    const color2 = withAlpha(textValue(gradient, 'color2Hex', '#411F8C'), opacity);
+    const color3 = withAlpha(textValue(gradient, 'color3Hex', '#282952'), opacity);
+    return `linear-gradient(${numberValue(gradient, 'angleDeg', 135)}deg, ${color1}, ${color2} 52%, ${color3})`;
+  }
+  return withAlpha(textValue(container, 'backgroundColorHex', textValue(settings, 'backgroundColorHex', '#32334F')), opacity);
+}
+
+function textStyle(settings: Record<string, unknown>, key: string, fallbackSize: number) {
+  const style = recordValue(settings, key);
+  return {
+    color: textValue(style, 'colorHex', '#E6E6E6'),
+    fontFamily: `"${textValue(style, 'fontFamily', 'Segoe UI Variable Display')}", "Segoe UI", sans-serif`,
+    fontSize: `${numberValue(style, 'fontSizePx', fallbackSize)}px`,
+    fontWeight: booleanValue(style, 'bold', key === 'songTextStyle') ? 800 : 500,
+    fontStyle: booleanValue(style, 'italic', false) ? 'italic' : 'normal',
+    textDecoration: booleanValue(style, 'underline', false) ? 'underline' : 'none',
+  } satisfies CSSProperties;
+}
+
+function coverURLWithCacheBuster(snapshot: TideReaderOverlaySnapshot) {
+  if (!snapshot.coverUrl) {
+    return '';
+  }
+  const token = textValue(snapshot.nowPlaying, 'title') + textValue(snapshot.nowPlaying, 'artist');
+  const separator = snapshot.coverUrl.includes('?') ? '&' : '?';
+  return `${snapshot.coverUrl}${separator}v=${encodeURIComponent(token)}`;
+}
+
+function tideReaderOverlayURL(module: ModuleInfo | null, snapshot: TideReaderOverlaySnapshot) {
+  return snapshot.overlayUrl || statusValue(module?.status ?? {}, 'overlayUrl') || 'http://127.0.0.1:17655/overlay';
+}
+
+async function copyText(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
+}
+
+function formatStatusState(value: string) {
+  if (!value) {
+    return 'Unavailable';
+  }
+  return value
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 function formatRun(value: string) {
@@ -139,14 +283,23 @@ function formatRun(value: string) {
   return date.toLocaleString();
 }
 
-function resultLabel(success: boolean, lastRun: string, error?: string) {
-  if (!lastRun) {
-    return 'No activity';
+function destinationLabel(value: string) {
+  if (!value) {
+    return 'Unknown';
   }
-  if (success) {
-    return 'Success';
+  return value === '1' ? '1 Destination' : `${value} Destinations`;
+}
+
+function latestActivity(announceStatus: AnnounceStatus, endStreamStatus: EndStreamStatus) {
+  const announceTime = Date.parse(announceStatus.lastRun || '');
+  const endStreamTime = Date.parse(endStreamStatus.lastRun || '');
+  if (Number.isNaN(announceTime) && Number.isNaN(endStreamTime)) {
+    return 'Unavailable';
   }
-  return error || 'Failed';
+  if (!Number.isNaN(announceTime) && (Number.isNaN(endStreamTime) || announceTime >= endStreamTime)) {
+    return announceStatus.success ? 'Announcement Successful' : 'Announcement Failed';
+  }
+  return endStreamStatus.success ? 'End Stream Successful' : 'End Stream Failed';
 }
 
 function StatusPill({ label, tone = 'neutral' }: { label: string; tone?: 'running' | 'warning' | 'error' | 'offline' | 'neutral' | 'info' }) {
@@ -159,22 +312,41 @@ function StatusPill({ label, tone = 'neutral' }: { label: string; tone?: 'runnin
   );
 }
 
-function WorkflowNotice({ message, kind = 'info' }: { message: string; kind?: 'info' | 'warning' | 'error' | 'success' }) {
-  const Icon = kind === 'warning' ? AlertTriangle : kind === 'error' ? XCircle : kind === 'success' ? CheckCircle2 : Info;
+function ActivityCard({ title, status }: { title: string; status: AnnounceStatus | EndStreamStatus }) {
+  const failed = Boolean(status.lastRun && !status.success);
   return (
-    <div className={`inline-notice notice-${kind}`} role="status" aria-live="polite">
-      <Icon aria-hidden="true" />
-      <span>{message}</span>
-    </div>
+    <article>
+      <h3>{title}</h3>
+      <StatusPill
+        label={!status.lastRun ? 'No activity' : status.success ? 'Success' : 'Failed'}
+        tone={!status.lastRun ? 'neutral' : status.success ? 'running' : 'error'}
+      />
+      <span>{formatRun(status.lastRun)}</span>
+      {failed && status.error ? (
+        <details className="activity-details">
+          <summary>View Details</summary>
+          <p>{status.error}</p>
+        </details>
+      ) : null}
+    </article>
   );
 }
 
-export function Dashboard({ modules, workflow, onStart, onOpen, onRefresh }: { modules: ModuleInfo[]; workflow: StreamSignalWorkflow } & ModuleActions) {
+export function Dashboard({
+  modules,
+  workflow,
+  tideReaderWorkflow,
+  tideReaderOverlay = emptyTideReaderOverlay,
+  onStart,
+  onOpen,
+  onRefresh,
+}: { modules: ModuleInfo[]; workflow: StreamSignalWorkflow; tideReaderWorkflow: TideReaderWorkflow; tideReaderOverlay?: TideReaderOverlaySnapshot } & ModuleActions) {
   const module = streamSignalModule(modules);
   const offline = !module || !module.running;
   const activeProfileName = workflow.currentProfile.name || statusValue(module?.status ?? {}, 'activeProfile');
   const goLiveDisabled = offline || !activeProfileName || workflow.busy;
-  const serviceState = offline ? 'Offline' : statusValue(module.status, 'state') || module.healthStatus || 'Unknown';
+  const destinationCount = statusValue(module?.status ?? {}, 'destinationCount');
+  const destinationSummary = activeProfileName ? destinationLabel(destinationCount) : 'No active profile';
 
   return (
     <main className="content" aria-labelledby="dashboard-title">
@@ -185,254 +357,399 @@ export function Dashboard({ modules, workflow, onStart, onOpen, onRefresh }: { m
         </div>
       </div>
 
-      <section className="status-strip" aria-label="StreamSignal summary">
-        <div>
-          <span>Service</span>
-          <strong>{serviceState}</strong>
-        </div>
-        <div>
-          <span>Mode</span>
-          <strong>{modeLabel(module?.mode || '')}</strong>
-        </div>
-        <div>
-          <span>Active profile</span>
-          <strong>{activeProfileName || 'None'}</strong>
-        </div>
-        <div>
-          <span>Destinations</span>
-          <strong>{statusValue(module?.status ?? {}, 'destinationCount') || 'Unknown'}</strong>
-        </div>
-      </section>
-
-      <section className="stream-control" aria-label="StreamSignal">
-        <div className="control-header">
-          <div>
-            <h2>StreamSignal</h2>
-            <p>{offline ? 'StreamSignal unavailable.' : module.healthText || statusValue(module.status, 'message') || 'Ready for announcement setup.'}</p>
+      <div className="dashboard-workflow-grid">
+        <section className="stream-control" aria-label="Stream preparation">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Announcements module</p>
+              <h2>
+                <img className="module-title-icon" src={streamSignalIcon} alt="" aria-hidden="true" />
+                StreamSignal
+              </h2>
+            </div>
           </div>
-          <StatusPill label={module ? healthLabel(module) : 'Offline'} tone={healthTone(module)} />
-        </div>
 
-        {offline ? (
-          <div className="offline-actions inline-panel">
-            <p>Start StreamSignal in service mode to load profiles and stream controls.</p>
-            <div className="module-actions">
+          <div className="profile-row">
+            <label>
+              <span>Profile</span>
+              <select value={workflow.selectedProfile} onChange={(event) => workflow.onSelectProfile(event.currentTarget.value)} disabled={offline || workflow.busy}>
+                <option value="">Select profile</option>
+                {workflow.profiles.map((profile) => (
+                  <option value={profile} key={profile}>
+                    {profile}
+                  </option>
+                ))}
+              </select>
+              <small>{destinationSummary}</small>
+            </label>
+          </div>
+
+          <div className="primary-actions">
+            <button className="button-highlight" type="button" onClick={workflow.onGoLive} disabled={goLiveDisabled}>
+              <Radio aria-hidden="true" />
+              Go Live
+            </button>
+            <button className="button-danger" type="button" onClick={workflow.onEndStream} disabled={goLiveDisabled}>
+              <Square aria-hidden="true" />
+              End Stream
+            </button>
+          </div>
+
+          <div className="secondary-actions">
+            {offline ? (
               <button className="button-primary" type="button" onClick={() => onStart(module?.id || 'streamsignal')}>
                 <Play aria-hidden="true" />
                 Start Service Mode
               </button>
-              <button type="button" onClick={onRefresh}>
-                <RefreshCw aria-hidden="true" />
-                Refresh
+            ) : null}
+            {module?.running ? (
+              <button type="button" onClick={() => onOpen(module.id)}>
+                <ExternalLink aria-hidden="true" />
+                Open StreamSignal
               </button>
-            </div>
-          </div>
-        ) : (
-          <div className="control-grid">
-            <div className="control-panel">
-              <h3>Status</h3>
-              <div className="meta-row">
-                <span>Current State</span>
-                <strong>{statusValue(module.status, 'state') || module.healthStatus || 'Unknown'}</strong>
-              </div>
-              <div className="meta-row">
-                <span>Active Profile</span>
-                <strong>{activeProfileName || 'None'}</strong>
-              </div>
-              <div className="meta-row">
-                <span>Destination Count</span>
-                <strong>{statusValue(module.status, 'destinationCount') || 'Unknown'}</strong>
-              </div>
-            </div>
-
-            <div className="control-panel">
-              <h3>Runtime</h3>
-              <div className="meta-row">
-                <span>Version</span>
-                <strong>{module.version || 'Unknown'}</strong>
-              </div>
-              <div className="meta-row">
-                <span>Mode</span>
-                <strong>{modeLabel(module.mode)}</strong>
-              </div>
-              <div className="meta-row">
-                <span>Protocol</span>
-                <strong>{module.protocol || 'Unknown'}</strong>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="profile-row">
-          <label>
-            <span>Profile</span>
-            <select value={workflow.selectedProfile} onChange={(event) => workflow.onSelectProfile(event.currentTarget.value)} disabled={offline || workflow.busy}>
-              <option value="">Select profile</option>
-              {workflow.profiles.map((profile) => (
-                <option value={profile} key={profile}>
-                  {profile}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button className="button-primary" type="button" onClick={workflow.onActivateProfile} disabled={offline || !workflow.selectedProfile || workflow.busy}>
-            <UserRound aria-hidden="true" />
-            Activate
-          </button>
-        </div>
-
-        {!activeProfileName && !offline ? <WorkflowNotice kind="warning" message="No active StreamSignal profile selected." /> : null}
-        {workflow.message ? <WorkflowNotice kind={workflow.message.toLowerCase().includes('failed') ? 'error' : 'success'} message={workflow.message} /> : null}
-
-        <div className="primary-actions">
-          <button className="button-highlight" type="button" onClick={workflow.onGoLive} disabled={goLiveDisabled}>
-            <Radio aria-hidden="true" />
-            Go Live
-          </button>
-          <button className="button-danger" type="button" onClick={workflow.onEndStream} disabled={goLiveDisabled}>
-            <Square aria-hidden="true" />
-            End Stream
-          </button>
-          {module?.running ? (
-            <button type="button" onClick={() => onOpen(module.id)}>
-              <ExternalLink aria-hidden="true" />
-              Open StreamSignal
+            ) : null}
+            <button type="button" onClick={onRefresh}>
+              <RefreshCw aria-hidden="true" />
+              Refresh
             </button>
-          ) : null}
-          <button type="button" onClick={onRefresh}>
-            <RefreshCw aria-hidden="true" />
-            Refresh
-          </button>
-        </div>
-      </section>
+          </div>
+        </section>
 
-      <section className="section recent-activity" aria-label="Recent Activity">
-        <div className="section-heading">
-          <h2>Recent Activity</h2>
-        </div>
-        <div className="activity-grid">
-          <article>
-            <h3>Announcement</h3>
-            <StatusPill
-              label={resultLabel(workflow.announceStatus.success, workflow.announceStatus.lastRun, workflow.announceStatus.error)}
-              tone={!workflow.announceStatus.lastRun ? 'neutral' : workflow.announceStatus.success ? 'running' : 'error'}
-            />
-            <span>{formatRun(workflow.announceStatus.lastRun)}</span>
-          </article>
-          <article>
-            <h3>End Stream</h3>
-            <StatusPill
-              label={resultLabel(workflow.endStreamStatus.success, workflow.endStreamStatus.lastRun, workflow.endStreamStatus.error)}
-              tone={!workflow.endStreamStatus.lastRun ? 'neutral' : workflow.endStreamStatus.success ? 'running' : 'error'}
-            />
-            <span>{formatRun(workflow.endStreamStatus.lastRun)}</span>
-          </article>
-        </div>
-      </section>
+        <section className="section recent-activity" aria-label="Recent Activity">
+          <div className="section-heading">
+            <h2>Last Action</h2>
+            <strong>{latestActivity(workflow.announceStatus, workflow.endStreamStatus)}</strong>
+          </div>
+          <div className="activity-grid">
+            <ActivityCard title="Announcement" status={workflow.announceStatus} />
+            <ActivityCard title="End Stream" status={workflow.endStreamStatus} />
+          </div>
+        </section>
+      </div>
 
       {workflow.pendingConfirmation ? (
-        <div className="modal-backdrop" role="presentation">
-          <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="duplicate-title">
-            <div className="modal-header">
-              <AlertTriangle aria-hidden="true" />
-              <div>
-                <h2 id="duplicate-title">Send again?</h2>
-                <p>A recent announcement appears to have already been sent.</p>
-              </div>
-            </div>
-            {workflow.pendingConfirmation.error ? <span>{workflow.pendingConfirmation.error}</span> : null}
-            <div className="modal-actions">
-              <button type="button" onClick={workflow.onCancelConfirmation}>
-                Cancel
-              </button>
-              <button className="button-highlight" type="button" onClick={workflow.onConfirmGoLive}>
-                Confirm
-              </button>
-            </div>
-          </section>
-        </div>
+        <ConfirmationModal workflow={workflow} />
       ) : null}
+
+      <TideReaderPanel modules={modules} workflow={tideReaderWorkflow} overlaySnapshot={tideReaderOverlay} onStart={onStart} onOpen={onOpen} onRefresh={onRefresh} />
     </main>
   );
 }
 
-export function ModulesPage({ modules, onStart, onOpen, onRefresh }: { modules: ModuleInfo[] } & ModuleActions) {
+function TideReaderPanel({
+  modules,
+  workflow,
+  overlaySnapshot = emptyTideReaderOverlay,
+  onStart,
+  onOpen,
+  onRefresh,
+}: { modules: ModuleInfo[]; workflow: TideReaderWorkflow; overlaySnapshot?: TideReaderOverlaySnapshot } & ModuleActions) {
+  const module = tideReaderModule(modules);
+  const offline = !module || !module.running;
+  const statusState = statusValue(module?.status ?? {}, 'state');
+  const statusMessage = statusValue(module?.status ?? {}, 'message');
+  const overlayURL = tideReaderOverlayURL(module, overlaySnapshot);
+  const [copiedOverlayURL, setCopiedOverlayURL] = useState(false);
+
+  function handleCopyOverlayURL() {
+    void (async () => {
+      await copyText(overlayURL);
+      setCopiedOverlayURL(true);
+      window.setTimeout(() => setCopiedOverlayURL(false), 1600);
+    })();
+  }
+
   return (
-    <main className="content" aria-labelledby="diagnostics-title">
-      <div className="page-heading">
+    <section className="module-workflow" aria-label="TideReader">
+      <div className="section-heading">
         <div>
-          <p className="eyebrow">Read-only SIP details</p>
-          <h1 id="diagnostics-title">Diagnostics</h1>
+          <p className="eyebrow">Overlay module</p>
+          <div className="module-title-row">
+            <h2>
+              <img className="module-title-icon" src={tideReaderIcon} alt="" aria-hidden="true" />
+              TideReader
+            </h2>
+            <button className="module-tooltip" type="button" aria-label={`Copy overlay URL: ${overlayURL}`} data-tooltip={copiedOverlayURL ? 'Copied' : overlayURL} onClick={handleCopyOverlayURL}>
+              {copiedOverlayURL ? <CheckCircle2 aria-hidden="true" /> : <Copy aria-hidden="true" />}
+            </button>
+          </div>
         </div>
       </div>
 
-      {modules.length === 0 ? (
-        <div className="empty-state compact">
-          <Server aria-hidden="true" />
-          <p>No Starsong modules detected.</p>
-          <span>Install and launch a compatible application to begin using LivePanel.</span>
+      <div className="overlay-preview-panel">
+        <div className="overlay-preview-topline">
+          <h3>Overlay Preview</h3>
         </div>
-      ) : (
-        <div className="module-details">
-          {modules.map((module) => (
-            <article className="module-detail" key={module.id}>
-              <div className="module-card-topline">
-                <div>
-                  <h2>{module.name}</h2>
-                  <p>{module.endpoint || module.executable || 'No endpoint available'}</p>
-                </div>
-                <StatusPill label={healthLabel(module)} tone={healthTone(module)} />
-              </div>
-
-              <dl className="detail-list">
-                <div>
-                  <dt>Application</dt>
-                  <dd>{module.name}</dd>
-                </div>
-                <div>
-                  <dt>Version</dt>
-                  <dd>{module.version || 'Unknown'}</dd>
-                </div>
-                <div>
-                  <dt>Installed</dt>
-                  <dd>{installedLabel(module)}</dd>
-                </div>
-                <div>
-                  <dt>Running</dt>
-                  <dd>{module.running ? 'Yes' : 'No'}</dd>
-                </div>
-                <div>
-                  <dt>Mode</dt>
-                  <dd>{modeLabel(module.mode)}</dd>
-                </div>
-                <div>
-                  <dt>Health</dt>
-                  <dd>{module.error || module.healthText || module.healthStatus || 'Unknown'}</dd>
-                </div>
-              </dl>
-
-              <CapabilityList capabilities={module.capabilities} />
-              <ModuleActionBar module={module} onStart={onStart} onOpen={onOpen} onRefresh={onRefresh} />
-
-              <div className="raw-status">
-                <h3>Status</h3>
-                {statusEntries(module.status).length === 0 ? (
-                  <p>No status data returned.</p>
-                ) : (
-                  <dl>
-                    {statusEntries(module.status).map((entry) => (
-                      <div key={entry.key}>
-                        <dt>{entry.key}</dt>
-                        <dd>{entry.value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                )}
-              </div>
-            </article>
-          ))}
+        <div className="overlay-preview-frame">
+          {offline ? (
+            <div className="overlay-preview-empty">TideReader is offline</div>
+          ) : (
+            <TideReaderOverlayPreview snapshot={overlaySnapshot} />
+          )}
         </div>
-      )}
+      </div>
+
+      <div className="profile-row">
+        <label>
+          <span>Profile</span>
+          <select
+            value={workflow.selectedProfile}
+            onChange={(event) => workflow.onSelectProfile(event.currentTarget.value)}
+            disabled={offline || workflow.busy}
+          >
+            <option value="">Select profile</option>
+            {workflow.profiles.map((profile) => (
+              <option value={profile} key={profile}>
+                {profile}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="secondary-actions">
+        {offline ? (
+          <button className="button-primary" type="button" onClick={() => onStart(module?.id || 'tidereader')}>
+            <Play aria-hidden="true" />
+            Start Service Mode
+          </button>
+        ) : null}
+        {module?.running ? (
+          <button type="button" onClick={() => onOpen(module.id)}>
+            <ExternalLink aria-hidden="true" />
+            Open TideReader
+          </button>
+        ) : null}
+        <button type="button" onClick={onRefresh}>
+          <RefreshCw aria-hidden="true" />
+          Refresh
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function TideReaderOverlayPreview({ snapshot }: { snapshot: TideReaderOverlaySnapshot }) {
+  if (!snapshot.available) {
+    return <div className="overlay-preview-empty">{snapshot.error || 'Overlay preview unavailable'}</div>;
+  }
+
+  const settings = snapshot.settings ?? {};
+  const nowPlaying = snapshot.nowPlaying ?? {};
+  const container = recordValue(settings, 'overlayContainerStyle');
+  const pillStyle = recordValue(settings, 'statusPillStyle');
+  const status = textValue(nowPlaying, 'status', 'idle');
+  const titleStyle = recordValue(settings, 'songTextStyle');
+  const artistStyle = recordValue(settings, 'artistTextStyle');
+  const albumStyle = recordValue(settings, 'albumTextStyle');
+  const imagePosition = textValue(settings, 'imagePosition', 'Left').toLowerCase();
+  const textAlign = textValue(settings, 'textAlign', 'Left').toLowerCase();
+  const coverURL = coverURLWithCacheBuster(snapshot);
+  const title = truncateText(textValue(nowPlaying, 'title', 'Nothing playing'), numberValue(titleStyle, 'maxCharacters', 55));
+  const artist = truncateText(textValue(nowPlaying, 'artist', 'Waiting for playback'), numberValue(artistStyle, 'maxCharacters', 60));
+  const album = truncateText(textValue(nowPlaying, 'album', ''), numberValue(albumStyle, 'maxCharacters', 60));
+
+  return (
+    <div
+      className="tr-live-preview"
+      data-image-position={imagePosition}
+      data-text-align={textAlign}
+      style={{
+        '--tr-preview-bg': overlayBackground(settings),
+        '--tr-preview-radius': `${numberValue(container, 'cornerRadiusPx', 18)}px`,
+        '--tr-preview-padding': `${numberValue(container, 'paddingPx', 14)}px`,
+        '--tr-preview-gap': `${numberValue(container, 'gapPx', 14)}px`,
+        '--tr-preview-border-width': `${booleanValue(container, 'borderEnabled', true) ? numberValue(container, 'borderWidthPx', 1) : 0}px`,
+        '--tr-preview-border-color': textValue(container, 'borderColorHex', '#E6E6E6'),
+        '--tr-preview-image-size': `${numberValue(settings, 'imageSizePx', 100)}px`,
+        '--tr-pill-bg': withAlpha(textValue(pillStyle, 'backgroundColorHex', '#BBB3FF'), numberValue(pillStyle, 'opacity', 0.25)),
+        '--tr-pill-color': textValue(pillStyle, 'textColorHex', '#E6E6E6'),
+        '--tr-pill-radius': `${numberValue(pillStyle, 'cornerRadiusPx', 999)}px`,
+        '--tr-pill-padding': `${numberValue(pillStyle, 'paddingVerticalPx', 4)}px ${numberValue(pillStyle, 'paddingHorizontalPx', 9)}px`,
+        '--tr-pill-font-size': `${numberValue(pillStyle, 'fontSizePx', 11)}px`,
+      } as CSSProperties}
+      aria-label="TideReader overlay preview"
+    >
+      <div className={coverURL ? 'tr-preview-art has-artwork' : 'tr-preview-art'}>
+        {coverURL ? <img src={coverURL} alt="" /> : <span>TR</span>}
+      </div>
+      <div className="tr-preview-copy">
+        <div className="tr-preview-topline">
+          {booleanValue(settings, 'showAppName', true) ? <span className="tr-preview-brand">TideReader</span> : null}
+          {booleanValue(settings, 'showPlaybackState', true) ? <span className={`tr-preview-pill ${status}`}>{formatStatusState(status)}</span> : null}
+        </div>
+        <h4 style={textStyle(settings, 'songTextStyle', 22)}>{title}</h4>
+        <p style={textStyle(settings, 'artistTextStyle', 16)}>{artist}</p>
+        {album ? <p style={textStyle(settings, 'albumTextStyle', 14)}>{album}</p> : null}
+      </div>
+    </div>
+  );
+}
+
+function ConfirmationModal({ workflow }: { workflow: StreamSignalWorkflow }) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const pendingConfirmation = workflow.pendingConfirmation;
+
+  useEffect(() => {
+    confirmRef.current?.focus();
+  }, []);
+
+  function onKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === 'Escape') {
+      workflow.onCancelConfirmation();
+    }
+    if (event.key !== 'Tab') {
+      return;
+    }
+    const focusable = [cancelRef.current, confirmRef.current].filter(Boolean) as HTMLButtonElement[];
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="duplicate-title" onKeyDown={onKeyDown}>
+        <div className="modal-header">
+          <AlertTriangle aria-hidden="true" />
+          <div>
+            <h2 id="duplicate-title">Send again?</h2>
+            <p>A recent announcement appears to have already been sent.</p>
+          </div>
+        </div>
+        {pendingConfirmation?.error ? <span>{pendingConfirmation.error}</span> : null}
+        <div className="modal-actions">
+          <button type="button" onClick={workflow.onCancelConfirmation} ref={cancelRef}>
+            Cancel
+          </button>
+          <button className="button-highlight" type="button" onClick={workflow.onConfirmGoLive} ref={confirmRef}>
+            Confirm
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+export function ModulesPage({
+  modules,
+  autoStartEnabled,
+  onToggleAutoStart,
+  onStart,
+  onOpen,
+  onRefresh,
+}: { modules: ModuleInfo[]; autoStartEnabled: boolean; onToggleAutoStart: (enabled: boolean) => void } & ModuleActions) {
+  return (
+    <main className="content" aria-labelledby="settings-title">
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">Application configuration</p>
+          <h1 id="settings-title">Settings</h1>
+        </div>
+      </div>
+
+      <section className="settings-section" aria-labelledby="module-management-title">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Stream tools</p>
+            <h2 id="module-management-title">Module Management</h2>
+          </div>
+        </div>
+        <div className="settings-panel">
+          <label className="setting-toggle">
+            <input
+              type="checkbox"
+              checked={autoStartEnabled}
+              onChange={(event) => onToggleAutoStart(event.currentTarget.checked)}
+            />
+            Auto-start managed modules
+          </label>
+        </div>
+      </section>
+
+      <section className="settings-section" aria-labelledby="module-diagnostics-title">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Advanced support</p>
+            <h2 id="module-diagnostics-title">Module Diagnostics</h2>
+          </div>
+        </div>
+
+        {modules.length === 0 ? (
+          <div className="empty-state compact">
+            <Server aria-hidden="true" />
+            <p>No Starsong modules detected.</p>
+            <span>Install and launch a compatible application to begin using LivePanel.</span>
+          </div>
+        ) : (
+          <div className="module-details">
+            {modules.map((module) => (
+              <article className="module-detail" key={module.id}>
+                <div className="module-card-topline">
+                  <div>
+                    <h2>{module.name}</h2>
+                    <p>{module.endpoint || module.executable || 'No endpoint available'}</p>
+                  </div>
+                  <StatusPill label={healthLabel(module)} tone={healthTone(module)} />
+                </div>
+
+                <dl className="detail-list">
+                  <div>
+                    <dt>Application</dt>
+                    <dd>{module.name}</dd>
+                  </div>
+                  <div>
+                    <dt>Version</dt>
+                    <dd>{module.version || 'Unknown'}</dd>
+                  </div>
+                  <div>
+                    <dt>Installed</dt>
+                    <dd>{installedLabel(module)}</dd>
+                  </div>
+                  <div>
+                    <dt>Running</dt>
+                    <dd>{module.running ? 'Yes' : 'No'}</dd>
+                  </div>
+                  <div>
+                    <dt>Mode</dt>
+                    <dd>{modeLabel(module.mode)}</dd>
+                  </div>
+                  <div>
+                    <dt>Health</dt>
+                    <dd>{module.error || module.healthText || module.healthStatus || 'Unknown'}</dd>
+                  </div>
+                </dl>
+
+                <CapabilityList capabilities={module.capabilities} />
+                <ModuleActionBar module={module} onStart={onStart} onOpen={onOpen} onRefresh={onRefresh} />
+
+                <div className="raw-status">
+                  <h3>Status</h3>
+                  {statusEntries(module.status).length === 0 ? (
+                    <p>No status data returned.</p>
+                  ) : (
+                    <dl>
+                      {statusEntries(module.status).map((entry) => (
+                        <div key={entry.key}>
+                          <dt>{entry.key}</dt>
+                          <dd>{entry.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
     </main>
   );
 }
@@ -482,9 +799,12 @@ export default function App() {
   const [profiles, setProfiles] = useState<string[]>([]);
   const [currentProfile, setCurrentProfile] = useState<CurrentProfile>({ id: '', name: '' });
   const [selectedProfile, setSelectedProfile] = useState('');
+  const [tideReaderProfiles, setTideReaderProfiles] = useState<string[]>([]);
+  const [tideReaderCurrentProfile, setTideReaderCurrentProfile] = useState<CurrentProfile>({ id: '', name: '' });
+  const [tideReaderSelectedProfile, setTideReaderSelectedProfile] = useState('');
+  const [tideReaderOverlay, setTideReaderOverlay] = useState<TideReaderOverlaySnapshot>(emptyTideReaderOverlay);
   const [announceStatus, setAnnounceStatus] = useState<AnnounceStatus>({ lastRun: '', success: false });
   const [endStreamStatus, setEndStreamStatus] = useState<EndStreamStatus>({ lastRun: '', success: false });
-  const [workflowMessage, setWorkflowMessage] = useState('');
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const [pendingConfirmation, setPendingConfirmation] = useState<AnnounceResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -509,7 +829,7 @@ export default function App() {
       ]);
       setProfiles(nextProfiles);
       setCurrentProfile(nextCurrentProfile);
-      setSelectedProfile((current) => current || nextCurrentProfile.name || nextProfiles[0] || '');
+      setSelectedProfile((current) => nextCurrentProfile.name || (nextProfiles.includes(current) ? current : ''));
       setAnnounceStatus(nextAnnounceStatus);
       setEndStreamStatus(nextEndStreamStatus);
     } catch {
@@ -521,53 +841,125 @@ export default function App() {
     }
   }
 
+  async function loadTideReaderWorkflow(nextModules: ModuleInfo[]) {
+    const module = tideReaderModule(nextModules);
+    if (!module?.running) {
+      const empty = emptyProfileWorkflowState();
+      setTideReaderProfiles(empty.profiles);
+      setTideReaderCurrentProfile(empty.currentProfile);
+      setTideReaderSelectedProfile('');
+      setTideReaderOverlay(emptyTideReaderOverlay);
+      return;
+    }
+    try {
+      const [nextProfiles, nextCurrentProfile, nextOverlay] = await Promise.all([
+        getTideReaderProfiles(),
+        getTideReaderCurrentProfile(),
+        getTideReaderOverlaySnapshot(),
+      ]);
+      setTideReaderProfiles(nextProfiles);
+      setTideReaderCurrentProfile(nextCurrentProfile);
+      setTideReaderSelectedProfile((current) => nextCurrentProfile.name || (nextProfiles.includes(current) ? current : ''));
+      setTideReaderOverlay(nextOverlay);
+    } catch {
+      const empty = emptyProfileWorkflowState();
+      setTideReaderProfiles(empty.profiles);
+      setTideReaderCurrentProfile(empty.currentProfile);
+      setTideReaderSelectedProfile('');
+      setTideReaderOverlay(emptyTideReaderOverlay);
+    }
+  }
+
   async function load(refresh = false) {
     setLoading(true);
     const next = refresh ? await refreshModules() : await listModules();
     setModules(next);
-    await loadStreamSignalWorkflow(next);
+    await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next)]);
     setLoading(false);
   }
 
+  async function refreshDashboardState() {
+    const next = await refreshModules();
+    setModules(next);
+    await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next)]);
+  }
+
+  async function startAutoStartModules(nextModules: ModuleInfo[]) {
+    let current = nextModules;
+    for (const module of nextModules) {
+      if (!module.autoStart || !module.installed || module.running) {
+        continue;
+      }
+      current = await startModule(module.id);
+    }
+    return current;
+  }
+
   useEffect(() => {
-    void load(true);
-    void getAutoStartManagedModules().then(setAutoStartEnabled);
+    void (async () => {
+      setLoading(true);
+      const enabled = await getAutoStartManagedModules();
+      setAutoStartEnabled(enabled);
+      let next = await refreshModules();
+      if (enabled) {
+        next = await startAutoStartModules(next);
+      }
+      setModules(next);
+      await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next)]);
+      setLoading(false);
+    })();
   }, []);
+
+  useEffect(() => {
+    if (page !== 'dashboard') {
+      return undefined;
+    }
+    const interval = window.setInterval(() => {
+      void refreshDashboardState();
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [page]);
 
   async function runAction(action: () => Promise<ModuleInfo[]>) {
     setLoading(true);
     const next = await action();
     setModules(next);
-    await loadStreamSignalWorkflow(next);
+    await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next)]);
     setLoading(false);
   }
 
   async function toggleAutoStart(enabled: boolean) {
-    setAutoStartEnabled(await setAutoStartManagedModules(enabled));
+    const nextEnabled = await setAutoStartManagedModules(enabled);
+    setAutoStartEnabled(nextEnabled);
+    if (!nextEnabled) {
+      return;
+    }
+    setLoading(true);
+    const next = await startAutoStartModules(modules);
+    setModules(next);
+    await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next)]);
+    setLoading(false);
   }
 
-  const healthyCount = useMemo(() => modules.filter((module) => module.healthy).length, [modules]);
   const workflow: StreamSignalWorkflow = {
     profiles,
     currentProfile,
     announceStatus,
     endStreamStatus,
     selectedProfile,
-    message: workflowMessage,
     busy: workflowBusy,
     pendingConfirmation,
-    onSelectProfile: setSelectedProfile,
-    onActivateProfile: () => {
+    onSelectProfile: (profile: string) => {
       void (async () => {
+        setSelectedProfile(profile);
+        if (!profile || profile === currentProfile.name) {
+          return;
+        }
         setWorkflowBusy(true);
-        setWorkflowMessage('');
-        const activated = await activateStreamSignalProfile(selectedProfile);
+        const activated = await activateStreamSignalProfile(profile);
         if (activated.success) {
-          setCurrentProfile({ id: activated.profileId || '', name: activated.profile || selectedProfile });
-          setWorkflowMessage('Profile activated');
+          setCurrentProfile({ id: activated.profileId || '', name: activated.profile || profile });
           await load(true);
-        } else {
-          setWorkflowMessage('Profile activation failed');
         }
         setWorkflowBusy(false);
       })();
@@ -575,16 +967,12 @@ export default function App() {
     onGoLive: () => {
       void (async () => {
         setWorkflowBusy(true);
-        setWorkflowMessage('');
         const response = await announceStreamSignal();
         if (response.requiresConfirmation) {
           setPendingConfirmation(response);
-          setWorkflowMessage('');
         } else if (response.success) {
-          setWorkflowMessage('Announcement Sent');
           setAnnounceStatus(await getStreamSignalAnnounceStatus());
         } else {
-          setWorkflowMessage(response.error || 'Announcement failed');
           setAnnounceStatus(await getStreamSignalAnnounceStatus());
         }
         setWorkflowBusy(false);
@@ -598,7 +986,6 @@ export default function App() {
         setWorkflowBusy(true);
         const response = await confirmStreamSignalAnnouncement(pendingConfirmation.confirmationId);
         setPendingConfirmation(null);
-        setWorkflowMessage(response.success ? 'Announcement Sent' : response.error || 'Announcement failed');
         setAnnounceStatus(await getStreamSignalAnnounceStatus());
         setWorkflowBusy(false);
       })();
@@ -607,10 +994,30 @@ export default function App() {
     onEndStream: () => {
       void (async () => {
         setWorkflowBusy(true);
-        setWorkflowMessage('');
         const response = await endStreamSignalStream();
-        setWorkflowMessage(response.success ? 'End Stream Complete' : response.error || 'End Stream failed');
         setEndStreamStatus(await getStreamSignalEndStreamStatus());
+        setWorkflowBusy(false);
+      })();
+    },
+  };
+
+  const tideReaderWorkflow: TideReaderWorkflow = {
+    profiles: tideReaderProfiles,
+    currentProfile: tideReaderCurrentProfile,
+    selectedProfile: tideReaderSelectedProfile,
+    busy: workflowBusy,
+    onSelectProfile: (profile: string) => {
+      void (async () => {
+        setTideReaderSelectedProfile(profile);
+        if (!profile || profile === tideReaderCurrentProfile.name) {
+          return;
+        }
+        setWorkflowBusy(true);
+        const activated = await activateTideReaderProfile(profile);
+        if (activated.success) {
+          setTideReaderCurrentProfile({ id: activated.profileId || '', name: activated.profile || profile });
+          await load(true);
+        }
         setWorkflowBusy(false);
       })();
     },
@@ -632,24 +1039,11 @@ export default function App() {
               <LayoutDashboard aria-hidden="true" />
               Dashboard
             </button>
-            <button className={page === 'diagnostics' ? 'active' : ''} onClick={() => setPage('diagnostics')}>
-              <Blocks aria-hidden="true" />
-              Diagnostics
+            <button className={page === 'settings' ? 'active' : ''} onClick={() => setPage('settings')}>
+              <Settings aria-hidden="true" />
+              Settings
             </button>
           </nav>
-          <div className="topbar-status">
-            <StatusPill label={loading ? 'Refreshing' : `${healthyCount}/${modules.length} healthy`} tone={healthyCount === modules.length && modules.length > 0 ? 'running' : 'info'} />
-            <span className="environment-badge">Dev</span>
-            <span className="version-badge">SIP v1</span>
-          </div>
-          <label className="setting-toggle">
-            <input
-              type="checkbox"
-              checked={autoStartEnabled}
-              onChange={(event) => void toggleAutoStart(event.currentTarget.checked)}
-            />
-            Auto-start managed modules
-          </label>
           <button className="icon-button" onClick={() => void load(true)} aria-label="Refresh modules" title="Refresh modules">
             <RefreshCw aria-hidden="true" />
           </button>
@@ -659,6 +1053,8 @@ export default function App() {
           <Dashboard
             modules={modules}
             workflow={workflow}
+            tideReaderWorkflow={tideReaderWorkflow}
+            tideReaderOverlay={tideReaderOverlay}
             onStart={(id) => void runAction(() => startModule(id))}
             onOpen={(id) => void runAction(() => openModule(id))}
             onRefresh={() => void load(true)}
@@ -666,6 +1062,8 @@ export default function App() {
         ) : (
           <ModulesPage
             modules={modules}
+            autoStartEnabled={autoStartEnabled}
+            onToggleAutoStart={(enabled) => void toggleAutoStart(enabled)}
             onStart={(id) => void runAction(() => startModule(id))}
             onOpen={(id) => void runAction(() => openModule(id))}
             onRefresh={() => void load(true)}

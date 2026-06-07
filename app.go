@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,6 +22,15 @@ type App struct {
 	autoStart bool
 }
 
+type TideReaderOverlaySnapshot struct {
+	Available  bool                   `json:"available"`
+	NowPlaying map[string]interface{} `json:"nowPlaying"`
+	Settings   map[string]interface{} `json:"settings"`
+	OverlayURL string                 `json:"overlayUrl"`
+	CoverURL   string                 `json:"coverUrl"`
+	Error      string                 `json:"error,omitempty"`
+}
+
 func NewApp() *App {
 	return &App{
 		service:   modules.NewService(defaultProviders()),
@@ -28,13 +40,6 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	if a.autoStart {
-		_ = a.service.StartAutoStart(ctx)
-		waitCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
-		defer cancel()
-		_, _ = pollModules(waitCtx, a.service, "")
-		return
-	}
 	_, _ = a.service.Refresh(ctx)
 }
 
@@ -91,7 +96,7 @@ func (a *App) OpenModule(id string) []modules.Module {
 }
 
 func (a *App) GetStreamSignalProfiles() sip.ProfilesResponse {
-	client, err := a.streamSignalClient()
+	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
 	if err != nil {
 		return sip.ProfilesResponse{Profiles: []string{}}
 	}
@@ -104,7 +109,7 @@ func (a *App) GetStreamSignalProfiles() sip.ProfilesResponse {
 }
 
 func (a *App) GetStreamSignalCurrentProfile() sip.CurrentProfileResponse {
-	client, err := a.streamSignalClient()
+	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
 	if err != nil {
 		return sip.CurrentProfileResponse{}
 	}
@@ -116,7 +121,7 @@ func (a *App) GetStreamSignalCurrentProfile() sip.CurrentProfileResponse {
 }
 
 func (a *App) ActivateStreamSignalProfile(profile string) sip.ProfileActivationResponse {
-	client, err := a.streamSignalClient()
+	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
 	if err != nil {
 		return sip.ProfileActivationResponse{}
 	}
@@ -128,8 +133,72 @@ func (a *App) ActivateStreamSignalProfile(profile string) sip.ProfileActivationR
 	return activated
 }
 
+func (a *App) GetTideReaderProfiles() sip.ProfilesResponse {
+	client, err := a.sipClientForModule("tidereader", "TideReader")
+	if err != nil {
+		return sip.ProfilesResponse{Profiles: []string{}}
+	}
+	ctx := a.requestContext()
+	profiles, err := client.GetProfiles(ctx)
+	if err != nil {
+		return sip.ProfilesResponse{Profiles: []string{}}
+	}
+	return profiles
+}
+
+func (a *App) GetTideReaderCurrentProfile() sip.CurrentProfileResponse {
+	client, err := a.sipClientForModule("tidereader", "TideReader")
+	if err != nil {
+		return sip.CurrentProfileResponse{}
+	}
+	current, err := client.GetCurrentProfile(a.requestContext())
+	if err != nil {
+		return sip.CurrentProfileResponse{}
+	}
+	return current
+}
+
+func (a *App) ActivateTideReaderProfile(profile string) sip.ProfileActivationResponse {
+	client, err := a.sipClientForModule("tidereader", "TideReader")
+	if err != nil {
+		return sip.ProfileActivationResponse{}
+	}
+	activated, err := client.ActivateProfile(a.requestContext(), profile)
+	if err != nil {
+		return sip.ProfileActivationResponse{}
+	}
+	_, _ = a.service.Refresh(a.requestContext())
+	return activated
+}
+
+func (a *App) GetTideReaderOverlaySnapshot() TideReaderOverlaySnapshot {
+	overlayURL := a.tideReaderOverlayURL()
+	if overlayURL == "" {
+		return TideReaderOverlaySnapshot{Available: false, NowPlaying: map[string]interface{}{}, Settings: map[string]interface{}{}, Error: "TideReader overlay unavailable."}
+	}
+
+	ctx := a.requestContext()
+	var nowPlaying map[string]interface{}
+	if err := fetchLocalJSON(ctx, overlaySiblingURL(overlayURL, "nowplaying.json"), &nowPlaying); err != nil {
+		return TideReaderOverlaySnapshot{Available: false, NowPlaying: map[string]interface{}{}, Settings: map[string]interface{}{}, Error: err.Error()}
+	}
+
+	var settings map[string]interface{}
+	if err := fetchLocalJSON(ctx, overlaySiblingURL(overlayURL, "overlay-settings.json"), &settings); err != nil {
+		settings = map[string]interface{}{}
+	}
+
+	return TideReaderOverlaySnapshot{
+		Available:  true,
+		NowPlaying: nowPlaying,
+		Settings:   settings,
+		OverlayURL: overlayURL,
+		CoverURL:   overlaySiblingURL(overlayURL, stringValue(nowPlaying["artworkPath"])),
+	}
+}
+
 func (a *App) AnnounceStreamSignal() sip.AnnounceResponse {
-	client, err := a.streamSignalClient()
+	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
 	if err != nil {
 		return sip.AnnounceResponse{Success: false, Error: "StreamSignal unavailable."}
 	}
@@ -141,7 +210,7 @@ func (a *App) AnnounceStreamSignal() sip.AnnounceResponse {
 }
 
 func (a *App) ConfirmStreamSignalAnnouncement(confirmationID string) sip.AnnounceResponse {
-	client, err := a.streamSignalClient()
+	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
 	if err != nil {
 		return sip.AnnounceResponse{Success: false, Error: "StreamSignal unavailable."}
 	}
@@ -153,7 +222,7 @@ func (a *App) ConfirmStreamSignalAnnouncement(confirmationID string) sip.Announc
 }
 
 func (a *App) GetStreamSignalAnnounceStatus() sip.AnnounceStatusResponse {
-	client, err := a.streamSignalClient()
+	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
 	if err != nil {
 		return sip.AnnounceStatusResponse{}
 	}
@@ -165,7 +234,7 @@ func (a *App) GetStreamSignalAnnounceStatus() sip.AnnounceStatusResponse {
 }
 
 func (a *App) EndStreamSignalStream() sip.EndStreamResponse {
-	client, err := a.streamSignalClient()
+	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
 	if err != nil {
 		return sip.EndStreamResponse{Success: false, Error: "StreamSignal unavailable."}
 	}
@@ -177,7 +246,7 @@ func (a *App) EndStreamSignalStream() sip.EndStreamResponse {
 }
 
 func (a *App) GetStreamSignalEndStreamStatus() sip.EndStreamStatusResponse {
-	client, err := a.streamSignalClient()
+	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
 	if err != nil {
 		return sip.EndStreamStatusResponse{}
 	}
@@ -198,16 +267,23 @@ func (a *App) SetAutoStartManagedModules(enabled bool) bool {
 }
 
 func defaultProviders() []modules.Provider {
-	entry := modules.RegistryEntry{
+	streamSignal := modules.RegistryEntry{
 		ID:         "streamsignal",
 		Name:       "StreamSignal",
 		Executable: configuredStreamSignalExecutable(),
 		Endpoints:  configuredStreamSignalEndpoints(),
 		AutoStart:  true,
 	}
-	launcher := modules.NewOwnedProcessLauncher()
+	tideReader := modules.RegistryEntry{
+		ID:         "tidereader",
+		Name:       "TideReader",
+		Executable: configuredTideReaderExecutable(),
+		Endpoints:  configuredTideReaderEndpoints(),
+		AutoStart:  true,
+	}
 	return []modules.Provider{
-		modules.NewManagedSIPProvider(entry, launcher, 900*time.Millisecond),
+		modules.NewManagedSIPProvider(streamSignal, modules.NewOwnedProcessLauncher(), 900*time.Millisecond),
+		modules.NewManagedSIPProvider(tideReader, modules.NewOwnedProcessLauncher(), 900*time.Millisecond),
 	}
 }
 
@@ -273,6 +349,132 @@ func configuredStreamSignalEndpoints() []string {
 	return endpoints
 }
 
+func configuredTideReaderExecutable() string {
+	if configured := strings.TrimSpace(os.Getenv("LIVEPANEL_TIDEREADER_EXECUTABLE")); configured != "" {
+		return configured
+	}
+
+	for _, candidate := range tideReaderExecutableCandidates() {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return "TideReader.Desktop.exe"
+}
+
+func tideReaderExecutableCandidates() []string {
+	names := []string{"TideReader.Desktop.exe", "TideReader.exe", "TideReader.Desktop", "TideReader"}
+	if runtime.GOOS != "windows" {
+		names = []string{"TideReader.Desktop", "TideReader", "TideReader.Desktop.exe", "TideReader.exe"}
+	}
+
+	candidates := make([]string, 0, len(names)*4)
+	for _, name := range names {
+		candidates = append(candidates,
+			filepath.Clean(filepath.Join("..", "TideReader", "build", "bin", name)),
+			filepath.Clean(filepath.Join("..", "TideReader", "artifacts", "publish", "win-x64-0.4.0-local", name)),
+			filepath.Clean(filepath.Join("..", "TideReader", "artifacts", "publish", "win-x64-0.4.0", name)),
+		)
+	}
+	if executable, err := os.Executable(); err == nil {
+		binDir := filepath.Dir(executable)
+		for _, name := range names {
+			candidates = append(candidates,
+				filepath.Clean(filepath.Join(binDir, "..", "..", "..", "TideReader", "build", "bin", name)),
+				filepath.Clean(filepath.Join(binDir, "..", "..", "..", "TideReader", "artifacts", "publish", "win-x64-0.4.0-local", name)),
+				filepath.Clean(filepath.Join(binDir, "..", "..", "..", "TideReader", "artifacts", "publish", "win-x64-0.4.0", name)),
+			)
+		}
+	}
+	return candidates
+}
+
+func configuredTideReaderEndpoints() []string {
+	if configured := strings.TrimSpace(os.Getenv("LIVEPANEL_TIDEREADER_ENDPOINT")); configured != "" {
+		if sip.IsLocalEndpoint(configured) {
+			return []string{configured}
+		}
+	}
+
+	endpoints := make([]string, 0, 10)
+	for port := 47030; port <= 47039; port++ {
+		endpoints = append(endpoints, sip.LocalEndpoint(port))
+	}
+	return endpoints
+}
+
+func (a *App) tideReaderOverlayURL() string {
+	if configured := strings.TrimSpace(os.Getenv("LIVEPANEL_TIDEREADER_OVERLAY_URL")); configured != "" && sip.IsLocalEndpoint(configured) {
+		return strings.TrimRight(configured, "/")
+	}
+
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for _, module := range a.service.List(ctx) {
+		if module.ID != "tidereader" || !module.Running {
+			continue
+		}
+		if overlayURL := stringValue(module.Status["overlayUrl"]); overlayURL != "" && sip.IsLocalEndpoint(overlayURL) {
+			return strings.TrimRight(overlayURL, "/")
+		}
+	}
+	return "http://127.0.0.1:17655/overlay"
+}
+
+func overlaySiblingURL(overlayURL string, path string) string {
+	parsed, err := url.Parse(strings.TrimSpace(overlayURL))
+	if err != nil {
+		return ""
+	}
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	if strings.HasPrefix(path, "http://") {
+		if sip.IsLocalEndpoint(path) {
+			return path
+		}
+		return ""
+	}
+	if strings.HasPrefix(path, "/") {
+		parsed.Path = path
+	} else {
+		parsed.Path = "/" + path
+	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
+func fetchLocalJSON(ctx context.Context, rawURL string, target interface{}) error {
+	if !sip.IsLocalEndpoint(rawURL) {
+		return fmt.Errorf("refusing non-local TideReader overlay URL")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{Timeout: 2 * time.Second}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("TideReader overlay returned %s", response.Status)
+	}
+	return json.NewDecoder(response.Body).Decode(target)
+}
+
+func stringValue(value interface{}) string {
+	if text, ok := value.(string); ok {
+		return strings.TrimSpace(text)
+	}
+	return ""
+}
+
 func pollModules(ctx context.Context, service *modules.Service, targetID string) ([]modules.Module, error) {
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
@@ -335,14 +537,14 @@ func (a *App) requestContext() context.Context {
 	return ctx
 }
 
-func (a *App) streamSignalClient() (*sip.Client, error) {
+func (a *App) sipClientForModule(id string, name string) (*sip.Client, error) {
 	ctx := a.requestContext()
 	modulesList, _ := a.service.Refresh(ctx)
 	for _, module := range modulesList {
-		if module.ID != "streamsignal" || !module.Running || strings.TrimSpace(module.Endpoint) == "" {
+		if module.ID != id || !module.Running || strings.TrimSpace(module.Endpoint) == "" {
 			continue
 		}
 		return sip.NewClient(module.Endpoint, 1200*time.Millisecond), nil
 	}
-	return nil, fmt.Errorf("StreamSignal unavailable")
+	return nil, fmt.Errorf("%s unavailable", name)
 }

@@ -6,6 +6,10 @@ export function ActivateStreamSignalProfile(arg1) {
   return window['go']['main']['App']['ActivateStreamSignalProfile'](arg1);
 }
 
+export function ActivateTideReaderProfile(arg1) {
+  return window['go']['main']['App']['ActivateTideReaderProfile'](arg1);
+}
+
 export function AnnounceStreamSignal() {
   return window['go']['main']['App']['AnnounceStreamSignal']();
 }
@@ -40,6 +44,18 @@ export function GetStreamSignalEndStreamStatus() {
 
 export function GetStreamSignalProfiles() {
   return window['go']['main']['App']['GetStreamSignalProfiles']();
+}
+
+export function GetTideReaderCurrentProfile() {
+  return window['go']['main']['App']['GetTideReaderCurrentProfile']();
+}
+
+export function GetTideReaderOverlaySnapshot() {
+  return window['go']['main']['App']['GetTideReaderOverlaySnapshot']();
+}
+
+export function GetTideReaderProfiles() {
+  return window['go']['main']['App']['GetTideReaderProfiles']();
 }
 
 export function OpenModule(arg1) {

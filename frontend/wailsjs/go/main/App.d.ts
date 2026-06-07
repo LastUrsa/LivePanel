@@ -5,6 +5,8 @@ import {modules} from '../models';
 
 export function ActivateStreamSignalProfile(arg1:string):Promise<sip.ProfileActivationResponse>;
 
+export function ActivateTideReaderProfile(arg1:string):Promise<sip.ProfileActivationResponse>;
+
 export function AnnounceStreamSignal():Promise<sip.AnnounceResponse>;
 
 export function ConfirmStreamSignalAnnouncement(arg1:string):Promise<sip.AnnounceResponse>;
@@ -22,6 +24,12 @@ export function GetStreamSignalCurrentProfile():Promise<sip.CurrentProfileRespon
 export function GetStreamSignalEndStreamStatus():Promise<sip.EndStreamStatusResponse>;
 
 export function GetStreamSignalProfiles():Promise<sip.ProfilesResponse>;
+
+export function GetTideReaderCurrentProfile():Promise<sip.CurrentProfileResponse>;
+
+export function GetTideReaderOverlaySnapshot():Promise<any>;
+
+export function GetTideReaderProfiles():Promise<sip.ProfilesResponse>;
 
 export function OpenModule(arg1:string):Promise<Array<modules.Module>>;
 

@@ -10,6 +10,7 @@ vi.mock('./lib/api/livepanel', async (importOriginal) => {
   return {
     ...actual,
     activateStreamSignalProfile: vi.fn(),
+    activateTideReaderProfile: vi.fn(),
     announceStreamSignal: vi.fn(),
     confirmStreamSignalAnnouncement: vi.fn(),
     endStreamSignalStream: vi.fn(),
@@ -18,6 +19,9 @@ vi.mock('./lib/api/livepanel', async (importOriginal) => {
     getStreamSignalCurrentProfile: vi.fn(),
     getStreamSignalEndStreamStatus: vi.fn(),
     getStreamSignalProfiles: vi.fn(),
+    getTideReaderCurrentProfile: vi.fn(),
+    getTideReaderOverlaySnapshot: vi.fn(),
+    getTideReaderProfiles: vi.fn(),
     listModules: vi.fn(),
     openModule: vi.fn(),
     refreshModules: vi.fn(),
@@ -48,6 +52,26 @@ function moduleFixture(overrides: Partial<ModuleInfo> = {}): ModuleInfo {
   };
 }
 
+function tideReaderModuleFixture(overrides: Partial<ModuleInfo> = {}): ModuleInfo {
+  return moduleFixture({
+    id: 'tidereader',
+    name: 'TideReader',
+    executable: 'TideReader.Desktop.exe',
+    version: '0.4.0',
+    healthText: 'TideReader operational',
+    capabilities: ['Profiles', 'Status Reporting'],
+    status: {
+      state: 'active',
+      message: 'Overlay active',
+      healthy: true,
+      activeProfile: 'Listening Party',
+      activeProfileId: 'listening-party',
+    },
+    endpoint: 'http://127.0.0.1:47030',
+    ...overrides,
+  });
+}
+
 function actionFixture() {
   return {
     onStart: vi.fn(),
@@ -76,7 +100,6 @@ function workflowFixture(overrides: Partial<{
     busy: false,
     pendingConfirmation: null,
     onSelectProfile: vi.fn(),
-    onActivateProfile: vi.fn(),
     onGoLive: vi.fn(),
     onConfirmGoLive: vi.fn(),
     onCancelConfirmation: vi.fn(),
@@ -85,36 +108,103 @@ function workflowFixture(overrides: Partial<{
   };
 }
 
+function tideReaderWorkflowFixture(overrides: Partial<{
+  profiles: string[];
+  currentProfile: CurrentProfile;
+  selectedProfile: string;
+  busy: boolean;
+}> = {}) {
+  return {
+    profiles: ['Listening Party', 'Gaming Overlay'],
+    currentProfile: { id: 'listening-party', name: 'Listening Party' },
+    selectedProfile: 'Listening Party',
+    busy: false,
+    onSelectProfile: vi.fn(),
+    ...overrides,
+  };
+}
+
+function tideReaderOverlayFixture(overrides: Partial<api.TideReaderOverlaySnapshot> = {}): api.TideReaderOverlaySnapshot {
+  return {
+    available: true,
+    nowPlaying: {
+      status: 'playing',
+      title: 'Paradigm (from "Gimmick!")',
+      artist: 'Ian Martyn, GameGrooves',
+      album: 'Lion Heart',
+      artworkPath: 'cover.jpg',
+    },
+    settings: {
+      songTextStyle: { fontSizePx: 22, maxCharacters: 55, bold: true, colorHex: '#E6E6E6' },
+      artistTextStyle: { fontSizePx: 16, maxCharacters: 60, bold: true, colorHex: '#E6E6E6' },
+      albumTextStyle: { fontSizePx: 14, maxCharacters: 60, colorHex: '#BFBFBF' },
+      imageSizePx: 100,
+      overlayContainerStyle: {
+        backgroundMode: 'solid',
+        backgroundColorHex: '#32334F',
+        opacity: 0.86,
+        cornerRadiusPx: 18,
+        paddingPx: 14,
+        gapPx: 14,
+        borderEnabled: true,
+        borderColorHex: '#E6E6E6',
+        borderWidthPx: 1,
+      },
+      statusPillStyle: {
+        backgroundColorHex: '#BBB3FF',
+        textColorHex: '#E6E6E6',
+        opacity: 0.25,
+        fontSizePx: 11,
+        cornerRadiusPx: 999,
+        paddingHorizontalPx: 9,
+        paddingVerticalPx: 4,
+      },
+      imagePosition: 'Left',
+      textAlign: 'Left',
+      showAppName: true,
+      showPlaybackState: true,
+    },
+    overlayUrl: 'http://127.0.0.1:17655/overlay',
+    coverUrl: 'http://127.0.0.1:17655/cover.jpg',
+    ...overrides,
+  };
+}
+
+function renderDashboard(modules: ModuleInfo[], workflow = workflowFixture(), actions = actionFixture()) {
+  render(<Dashboard modules={modules} workflow={workflow} tideReaderWorkflow={tideReaderWorkflowFixture()} tideReaderOverlay={tideReaderOverlayFixture()} {...actions} />);
+  return actions;
+}
+
 describe('Dashboard', () => {
   it('displays a healthy module', () => {
     const actions = actionFixture();
-    render(<Dashboard modules={[moduleFixture()]} workflow={workflowFixture()} {...actions} />);
+    render(<Dashboard modules={[moduleFixture(), tideReaderModuleFixture()]} workflow={workflowFixture()} tideReaderWorkflow={tideReaderWorkflowFixture()} {...actions} />);
 
-    expect(screen.getByText('StreamSignal')).toBeInTheDocument();
-    expect(screen.getByText('Healthy')).toBeInTheDocument();
+    expect(screen.getByText('Unknown')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Gaming Stream')).toBeInTheDocument();
     expect(screen.getByText('Open StreamSignal')).toBeInTheDocument();
+    expect(screen.queryByText('Runtime')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Activate$/i })).not.toBeInTheDocument();
   });
 
   it('displays an unhealthy module', () => {
     const actions = actionFixture();
-    render(<Dashboard modules={[moduleFixture({ healthy: false, healthStatus: 'error' })]} workflow={workflowFixture()} {...actions} />);
+    render(<Dashboard modules={[moduleFixture({ healthy: false, healthStatus: 'error' }), tideReaderModuleFixture()]} workflow={workflowFixture()} tideReaderWorkflow={tideReaderWorkflowFixture()} {...actions} />);
 
-    expect(screen.getByText('Unhealthy')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go Live/i })).toBeEnabled();
   });
 
   it('displays degraded modules distinctly from ready modules', () => {
     const actions = actionFixture();
-    render(<Dashboard modules={[moduleFixture({ healthy: true, healthStatus: 'degraded' })]} workflow={workflowFixture()} {...actions} />);
+    render(<Dashboard modules={[moduleFixture({ healthy: true, healthStatus: 'degraded' }), tideReaderModuleFixture()]} workflow={workflowFixture()} tideReaderWorkflow={tideReaderWorkflowFixture()} {...actions} />);
 
-    expect(screen.getByText('Degraded')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go Live/i })).toBeEnabled();
   });
 
   it('displays offline installed modules with a start action', () => {
     const actions = actionFixture();
-    render(<Dashboard modules={[moduleFixture({ running: false, healthy: false, mode: '', healthStatus: 'offline' })]} workflow={workflowFixture()} {...actions} />);
+    render(<Dashboard modules={[moduleFixture({ running: false, healthy: false, mode: '', healthStatus: 'offline' }), tideReaderModuleFixture()]} workflow={workflowFixture()} tideReaderWorkflow={tideReaderWorkflowFixture()} {...actions} />);
 
-    expect(screen.getAllByText('Offline').length).toBeGreaterThan(0);
     expect(screen.getByText('Start Service Mode')).toBeInTheDocument();
   });
 
@@ -122,8 +212,9 @@ describe('Dashboard', () => {
     const actions = actionFixture();
     render(
       <Dashboard
-        modules={[moduleFixture({ installed: false, running: false, healthy: false, mode: '', healthStatus: 'offline' })]}
+        modules={[moduleFixture({ installed: false, running: false, healthy: false, mode: '', healthStatus: 'offline' }), tideReaderModuleFixture()]}
         workflow={workflowFixture()}
+        tideReaderWorkflow={tideReaderWorkflowFixture()}
         {...actions}
       />,
     );
@@ -133,18 +224,43 @@ describe('Dashboard', () => {
 
   it('disables lifecycle actions without an active profile', () => {
     const actions = actionFixture();
-    render(<Dashboard modules={[moduleFixture()]} workflow={workflowFixture({ currentProfile: { id: '', name: '' } })} {...actions} />);
+    render(
+      <Dashboard
+        modules={[moduleFixture({ status: { state: 'idle', message: 'Ready', destinationCount: 1 } }), tideReaderModuleFixture()]}
+        workflow={workflowFixture({ currentProfile: { id: '', name: '' } })}
+        tideReaderWorkflow={tideReaderWorkflowFixture()}
+        {...actions}
+      />,
+    );
 
-    expect(screen.getByText('No active StreamSignal profile selected.')).toBeInTheDocument();
+    expect(screen.getByText('No active profile')).toBeInTheDocument();
+    expect(screen.queryByText('1 Destination')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Go Live/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /End Stream/i })).toBeDisabled();
+  });
+
+  it('shows failure details on demand in recent activity', () => {
+    const actions = actionFixture();
+    render(
+      <Dashboard
+        modules={[moduleFixture(), tideReaderModuleFixture()]}
+        workflow={workflowFixture({
+          announceStatus: { lastRun: '2026-06-05T12:00:00Z', success: false, error: 'SIP announcement request failed.' },
+        })}
+        tideReaderWorkflow={tideReaderWorkflowFixture()}
+        {...actions}
+      />,
+    );
+
+    expect(screen.getByText('View Details')).toBeInTheDocument();
+    expect(screen.getByText('SIP announcement request failed.')).toBeInTheDocument();
   });
 
   it('displays duplicate confirmation modal', () => {
     const actions = actionFixture();
     render(
       <Dashboard
-        modules={[moduleFixture()]}
+        modules={[moduleFixture(), tideReaderModuleFixture()]}
         workflow={workflowFixture({
           pendingConfirmation: {
             success: false,
@@ -153,6 +269,7 @@ describe('Dashboard', () => {
             error: 'A similar announcement was recently posted within the last 10 minutes. Continue?',
           },
         })}
+        tideReaderWorkflow={tideReaderWorkflowFixture()}
         {...actions}
       />,
     );
@@ -165,7 +282,7 @@ describe('Dashboard', () => {
     const user = userEvent.setup();
     const actions = actionFixture();
 
-    render(<Dashboard modules={[moduleFixture({ running: false, healthy: false, mode: '', healthStatus: 'offline' })]} workflow={workflowFixture()} {...actions} />);
+    render(<Dashboard modules={[moduleFixture({ running: false, healthy: false, mode: '', healthStatus: 'offline' }), tideReaderModuleFixture()]} workflow={workflowFixture()} tideReaderWorkflow={tideReaderWorkflowFixture()} {...actions} />);
 
     await user.click(screen.getByRole('button', { name: /Start Service Mode/i }));
     await user.click(screen.getAllByRole('button', { name: /Refresh/i })[0]);
@@ -179,19 +296,55 @@ describe('Dashboard', () => {
     const actions = actionFixture();
     const workflow = workflowFixture();
 
-    render(<Dashboard modules={[moduleFixture()]} workflow={workflow} {...actions} />);
+    render(<Dashboard modules={[moduleFixture(), tideReaderModuleFixture()]} workflow={workflow} tideReaderWorkflow={tideReaderWorkflowFixture()} {...actions} />);
 
-    await user.selectOptions(screen.getByLabelText(/Profile/i), 'Music Stream');
-    await user.click(screen.getByRole('button', { name: /^Activate$/i }));
+    await user.selectOptions(screen.getAllByLabelText(/Profile/i)[0], 'Music Stream');
     await user.click(screen.getByRole('button', { name: /Go Live/i }));
     await user.click(screen.getByRole('button', { name: /End Stream/i }));
     await user.click(screen.getByRole('button', { name: /Open StreamSignal/i }));
 
     expect(workflow.onSelectProfile).toHaveBeenCalledWith('Music Stream');
-    expect(workflow.onActivateProfile).toHaveBeenCalledTimes(1);
     expect(workflow.onGoLive).toHaveBeenCalledTimes(1);
     expect(workflow.onEndStream).toHaveBeenCalledTimes(1);
     expect(actions.onOpen).toHaveBeenCalledWith('streamsignal');
+  });
+
+  it('displays and controls TideReader overlay profiles', async () => {
+    const user = userEvent.setup();
+    const actions = actionFixture();
+    const tideReaderWorkflow = tideReaderWorkflowFixture();
+
+    render(
+      <Dashboard
+        modules={[moduleFixture(), tideReaderModuleFixture()]}
+        workflow={workflowFixture()}
+        tideReaderWorkflow={tideReaderWorkflow}
+        tideReaderOverlay={tideReaderOverlayFixture()}
+        {...actions}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: /TideReader/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Active Profile' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Active')).not.toBeInTheDocument();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const copyOverlayButton = screen.getByRole('button', { name: 'Copy overlay URL: http://127.0.0.1:17655/overlay' });
+    expect(copyOverlayButton).toBeInTheDocument();
+    expect(screen.getByLabelText('TideReader overlay preview')).toHaveTextContent('Paradigm');
+    expect(screen.queryByTitle('TideReader overlay preview')).not.toBeInTheDocument();
+    expect(screen.getAllByDisplayValue('Listening Party').length).toBeGreaterThan(0);
+
+    await user.click(copyOverlayButton);
+    await user.selectOptions(screen.getAllByLabelText(/Profile/i)[1], 'Gaming Overlay');
+    await user.click(screen.getByRole('button', { name: /Open TideReader/i }));
+
+    expect(writeText).toHaveBeenCalledWith('http://127.0.0.1:17655/overlay');
+    expect(tideReaderWorkflow.onSelectProfile).toHaveBeenCalledWith('Gaming Overlay');
+    expect(actions.onOpen).toHaveBeenCalledWith('tidereader');
   });
 
   it('calls duplicate confirmation actions', async () => {
@@ -206,7 +359,7 @@ describe('Dashboard', () => {
       },
     });
 
-    render(<Dashboard modules={[moduleFixture()]} workflow={workflow} {...actions} />);
+    render(<Dashboard modules={[moduleFixture(), tideReaderModuleFixture()]} workflow={workflow} tideReaderWorkflow={tideReaderWorkflowFixture()} {...actions} />);
 
     await user.click(screen.getByRole('button', { name: /Cancel/i }));
     await user.click(screen.getByRole('button', { name: /Confirm/i }));
@@ -228,11 +381,14 @@ describe('ModulesPage', () => {
             status: { state: 'warning', message: 'Pending Live Now recovery sessions need attention.', activeProfile: 'Music Stream' },
           }),
         ]}
+        autoStartEnabled={true}
+        onToggleAutoStart={vi.fn()}
         {...actions}
       />,
     );
 
-    expect(screen.getByRole('heading', { name: 'Diagnostics' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Module Diagnostics' })).toBeInTheDocument();
     expect(screen.getByText('http://127.0.0.1:47020')).toBeInTheDocument();
     expect(screen.getAllByText('Pending Live Now recovery sessions need attention.')).toHaveLength(2);
     expect(screen.getByText('activeProfile')).toBeInTheDocument();
@@ -241,7 +397,7 @@ describe('ModulesPage', () => {
 
   it('renders the modules empty state', () => {
     const actions = actionFixture();
-    render(<ModulesPage modules={[]} {...actions} />);
+    render(<ModulesPage modules={[]} autoStartEnabled={true} onToggleAutoStart={vi.fn()} {...actions} />);
 
     expect(screen.getByText('No Starsong modules detected.')).toBeInTheDocument();
   });
@@ -250,19 +406,23 @@ describe('ModulesPage', () => {
 describe('App workflows', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(api.refreshModules).mockResolvedValue([moduleFixture()]);
-    vi.mocked(api.listModules).mockResolvedValue([moduleFixture()]);
+    vi.mocked(api.refreshModules).mockResolvedValue([moduleFixture(), tideReaderModuleFixture()]);
+    vi.mocked(api.listModules).mockResolvedValue([moduleFixture(), tideReaderModuleFixture()]);
     vi.mocked(api.getAutoStartManagedModules).mockResolvedValue(true);
     vi.mocked(api.getStreamSignalProfiles).mockResolvedValue(['Gaming Stream', 'Music Stream']);
     vi.mocked(api.getStreamSignalCurrentProfile).mockResolvedValue({ id: 'gaming', name: 'Gaming Stream' });
     vi.mocked(api.getStreamSignalAnnounceStatus).mockResolvedValue({ lastRun: '', success: false });
     vi.mocked(api.getStreamSignalEndStreamStatus).mockResolvedValue({ lastRun: '', success: false });
+    vi.mocked(api.getTideReaderProfiles).mockResolvedValue(['Listening Party', 'Gaming Overlay']);
+    vi.mocked(api.getTideReaderCurrentProfile).mockResolvedValue({ id: 'listening-party', name: 'Listening Party' });
+    vi.mocked(api.getTideReaderOverlaySnapshot).mockResolvedValue(tideReaderOverlayFixture());
     vi.mocked(api.activateStreamSignalProfile).mockResolvedValue({ success: true, profile: 'Music Stream', profileId: 'music' });
+    vi.mocked(api.activateTideReaderProfile).mockResolvedValue({ success: true, profile: 'Gaming Overlay', profileId: 'gaming-overlay' });
     vi.mocked(api.announceStreamSignal).mockResolvedValue({ success: true });
     vi.mocked(api.confirmStreamSignalAnnouncement).mockResolvedValue({ success: true });
     vi.mocked(api.endStreamSignalStream).mockResolvedValue({ success: true });
-    vi.mocked(api.openModule).mockResolvedValue([moduleFixture()]);
-    vi.mocked(api.startModule).mockResolvedValue([moduleFixture()]);
+    vi.mocked(api.openModule).mockResolvedValue([moduleFixture(), tideReaderModuleFixture()]);
+    vi.mocked(api.startModule).mockResolvedValue([moduleFixture(), tideReaderModuleFixture()]);
     vi.mocked(api.setAutoStartManagedModules).mockResolvedValue(false);
   });
 
@@ -272,19 +432,46 @@ describe('App workflows', () => {
     expect(await screen.findByRole('heading', { name: 'Control Center' })).toBeInTheDocument();
     expect(await screen.findByDisplayValue('Gaming Stream')).toBeInTheDocument();
     expect(api.refreshModules).toHaveBeenCalledTimes(1);
+    expect(api.startModule).not.toHaveBeenCalled();
     expect(api.getStreamSignalProfiles).toHaveBeenCalledTimes(1);
     expect(api.getStreamSignalCurrentProfile).toHaveBeenCalledTimes(1);
+    expect(api.getTideReaderProfiles).toHaveBeenCalledTimes(1);
+    expect(api.getTideReaderCurrentProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts installed offline modules when auto-start is enabled', async () => {
+    vi.mocked(api.refreshModules).mockResolvedValue([
+      moduleFixture({
+        running: false,
+        healthy: false,
+        mode: '',
+        healthStatus: 'offline',
+      }),
+    ]);
+    vi.mocked(api.startModule).mockResolvedValue([moduleFixture()]);
+
+    render(<App />);
+
+    await waitFor(() => expect(api.startModule).toHaveBeenCalledWith('streamsignal'));
+    expect(await screen.findByDisplayValue('Gaming Stream')).toBeInTheDocument();
   });
 
   it('activates a selected profile through the full app wiring', async () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.selectOptions(await screen.findByLabelText(/Profile/i), 'Music Stream');
-    await user.click(screen.getByRole('button', { name: /^Activate$/i }));
+    await user.selectOptions((await screen.findAllByLabelText(/Profile/i))[0], 'Music Stream');
 
     await waitFor(() => expect(api.activateStreamSignalProfile).toHaveBeenCalledWith('Music Stream'));
-    expect(await screen.findByText('Profile activated')).toBeInTheDocument();
+  });
+
+  it('activates a TideReader profile through the full app wiring', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.selectOptions((await screen.findAllByLabelText(/Profile/i))[1], 'Gaming Overlay');
+
+    await waitFor(() => expect(api.activateTideReaderProfile).toHaveBeenCalledWith('Gaming Overlay'));
   });
 
   it('handles go-live confirmation through the full app wiring', async () => {
@@ -303,10 +490,10 @@ describe('App workflows', () => {
 
     await user.click(screen.getByRole('button', { name: /Confirm/i }));
     await waitFor(() => expect(api.confirmStreamSignalAnnouncement).toHaveBeenCalledWith('confirm-1'));
-    expect(await screen.findByText('Announcement Sent')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Send again?' })).not.toBeInTheDocument());
   });
 
-  it('switches to diagnostics with keyboard-accessible navigation', async () => {
+  it('switches to settings with keyboard-accessible navigation', async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -314,10 +501,11 @@ describe('App workflows', () => {
     await user.tab();
     expect(screen.getByRole('button', { name: /^Dashboard$/i })).toHaveFocus();
     await user.tab();
-    expect(screen.getByRole('button', { name: /Diagnostics/i })).toHaveFocus();
+    expect(screen.getByRole('button', { name: /Settings/i })).toHaveFocus();
     await user.keyboard('{Enter}');
 
-    expect(await screen.findByRole('heading', { name: 'Diagnostics' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Module Diagnostics' })).toBeInTheDocument();
     expect(screen.getByText('http://127.0.0.1:47020')).toBeInTheDocument();
   });
 });

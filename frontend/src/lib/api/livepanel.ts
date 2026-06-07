@@ -1,5 +1,6 @@
 import {
   ActivateStreamSignalProfile,
+  ActivateTideReaderProfile,
   AnnounceStreamSignal,
   ConfirmStreamSignalAnnouncement,
   EndStreamSignalStream,
@@ -9,6 +10,9 @@ import {
   GetStreamSignalCurrentProfile,
   GetStreamSignalEndStreamStatus,
   GetStreamSignalProfiles,
+  GetTideReaderCurrentProfile,
+  GetTideReaderOverlaySnapshot,
+  GetTideReaderProfiles,
   OpenModule,
   RefreshModules,
   SetAutoStartManagedModules,
@@ -72,6 +76,15 @@ export type EndStreamStatus = {
   error?: string;
 };
 
+export type TideReaderOverlaySnapshot = {
+  available: boolean;
+  nowPlaying: Record<string, unknown>;
+  settings: Record<string, unknown>;
+  overlayUrl: string;
+  coverUrl: string;
+  error?: string;
+};
+
 export function listModules(): Promise<ModuleInfo[]> {
   return GetModules();
 }
@@ -107,6 +120,23 @@ export function getStreamSignalCurrentProfile(): Promise<CurrentProfile> {
 
 export function activateStreamSignalProfile(profile: string): Promise<ProfileActivation> {
   return ActivateStreamSignalProfile(profile);
+}
+
+export async function getTideReaderProfiles(): Promise<string[]> {
+  const response = await GetTideReaderProfiles();
+  return response.profiles ?? [];
+}
+
+export function getTideReaderCurrentProfile(): Promise<CurrentProfile> {
+  return GetTideReaderCurrentProfile();
+}
+
+export function getTideReaderOverlaySnapshot(): Promise<TideReaderOverlaySnapshot> {
+  return GetTideReaderOverlaySnapshot();
+}
+
+export function activateTideReaderProfile(profile: string): Promise<ProfileActivation> {
+  return ActivateTideReaderProfile(profile);
 }
 
 export function announceStreamSignal(): Promise<AnnounceResult> {
