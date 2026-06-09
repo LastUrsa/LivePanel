@@ -10,8 +10,16 @@ export function ActivateTideReaderProfile(arg1) {
   return window['go']['main']['App']['ActivateTideReaderProfile'](arg1);
 }
 
+export function ActivateTuberSwitchProfile(arg1) {
+  return window['go']['main']['App']['ActivateTuberSwitchProfile'](arg1);
+}
+
 export function AnnounceStreamSignal() {
   return window['go']['main']['App']['AnnounceStreamSignal']();
+}
+
+export function ClearModuleExecutablePath(arg1) {
+  return window['go']['main']['App']['ClearModuleExecutablePath'](arg1);
 }
 
 export function ConfirmStreamSignalAnnouncement(arg1) {
@@ -26,12 +34,12 @@ export function GetAutoStartManagedModules() {
   return window['go']['main']['App']['GetAutoStartManagedModules']();
 }
 
-export function GetModules() {
-  return window['go']['main']['App']['GetModules']();
-}
-
 export function GetModuleExecutableConfigs() {
   return window['go']['main']['App']['GetModuleExecutableConfigs']();
+}
+
+export function GetModules() {
+  return window['go']['main']['App']['GetModules']();
 }
 
 export function GetStreamSignalAnnounceStatus() {
@@ -62,6 +70,14 @@ export function GetTideReaderProfiles() {
   return window['go']['main']['App']['GetTideReaderProfiles']();
 }
 
+export function GetTuberSwitchCurrentProfile() {
+  return window['go']['main']['App']['GetTuberSwitchCurrentProfile']();
+}
+
+export function GetTuberSwitchProfiles() {
+  return window['go']['main']['App']['GetTuberSwitchProfiles']();
+}
+
 export function OpenModule(arg1) {
   return window['go']['main']['App']['OpenModule'](arg1);
 }
@@ -72,10 +88,6 @@ export function PickModuleExecutablePath(arg1) {
 
 export function RefreshModules() {
   return window['go']['main']['App']['RefreshModules']();
-}
-
-export function ClearModuleExecutablePath(arg1) {
-  return window['go']['main']['App']['ClearModuleExecutablePath'](arg1);
 }
 
 export function SetAutoStartManagedModules(arg1) {

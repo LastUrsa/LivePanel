@@ -168,6 +168,20 @@ func TestClientReportsUnavailableModules(t *testing.T) {
 	}
 }
 
+func TestClientPreservesSIPErrorMessages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"success":false,"error":"ProfileNotFound"}`))
+	}))
+	defer server.Close()
+
+	_, err := NewClient(server.URL, time.Second).ActivateProfile(context.Background(), "Missing")
+	if err == nil || err.Error() != "ProfileNotFound" {
+		t.Fatalf("expected SIP error message, got %v", err)
+	}
+}
+
 func TestClientHonorsTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(50 * time.Millisecond)

@@ -2,10 +2,15 @@ import {
   AlertTriangle,
   CheckCircle2,
   Copy,
+  Eye,
   ExternalLink,
   Gauge,
+  Globe2,
   Info,
   LayoutDashboard,
+  MessageSquare,
+  Monitor,
+  Package,
   Play,
   RefreshCw,
   Radio,
@@ -18,6 +23,7 @@ import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } f
 import {
   activateStreamSignalProfile,
   activateTideReaderProfile,
+  activateTuberSwitchProfile,
   announceStreamSignal,
   clearModuleExecutablePath,
   confirmStreamSignalAnnouncement,
@@ -31,6 +37,8 @@ import {
   getTideReaderCurrentProfile,
   getTideReaderOverlaySnapshot,
   getTideReaderProfiles,
+  getTuberSwitchCurrentProfile,
+  getTuberSwitchProfiles,
   listModules,
   openModule,
   pickModuleExecutablePath,
@@ -49,6 +57,7 @@ import {
 import './App.css';
 import streamSignalIcon from './assets/images/StreamSignalIcon.png';
 import tideReaderIcon from './assets/images/TideReaderIcon.png';
+import tuberSwitchIcon from './assets/images/TuberSwitchIcon.png';
 
 type Page = 'dashboard' | 'settings' | 'diagnostics';
 
@@ -114,8 +123,11 @@ type TideReaderWorkflow = {
   currentProfile: CurrentProfile;
   selectedProfile: string;
   busy: boolean;
+  error?: string;
   onSelectProfile: (profile: string) => void;
 };
+
+type ProfilePreviewTarget = 'streamsignal' | 'tidereader' | 'tuberswitch';
 
 const emptyTideReaderOverlay: TideReaderOverlaySnapshot = {
   available: false,
@@ -158,6 +170,10 @@ function streamSignalModule(modules: ModuleInfo[]) {
 
 function tideReaderModule(modules: ModuleInfo[]) {
   return modules.find((module) => module.id === 'tidereader') ?? null;
+}
+
+function tuberSwitchModule(modules: ModuleInfo[]) {
+  return modules.find((module) => module.id === 'tuberswitch') ?? null;
 }
 
 function statusValue(status: Record<string, unknown>, key: string) {
@@ -277,6 +293,17 @@ function formatStatusState(value: string) {
     .join(' ');
 }
 
+function tuberSwitchModeLabel(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'png') {
+    return 'PNG';
+  }
+  if (normalized === '3d') {
+    return '3D';
+  }
+  return value ? formatStatusState(value) : 'Unavailable';
+}
+
 function formatRun(value: string) {
   if (!value) {
     return 'Never';
@@ -341,103 +368,460 @@ export function Dashboard({
   modules,
   workflow,
   tideReaderWorkflow,
+  tuberSwitchWorkflow,
   tideReaderOverlay = emptyTideReaderOverlay,
-  onStart,
   onOpen,
-  onRefresh,
-}: { modules: ModuleInfo[]; workflow: StreamSignalWorkflow; tideReaderWorkflow: TideReaderWorkflow; tideReaderOverlay?: TideReaderOverlaySnapshot } & ModuleActions) {
-  const module = streamSignalModule(modules);
-  const offline = !module || !module.running;
-  const activeProfileName = workflow.currentProfile.name || statusValue(module?.status ?? {}, 'activeProfile');
-  const goLiveDisabled = offline || !activeProfileName || workflow.busy;
-  const destinationCount = statusValue(module?.status ?? {}, 'destinationCount');
-  const destinationSummary = activeProfileName ? destinationLabel(destinationCount) : 'No active profile';
+}: { modules: ModuleInfo[]; workflow: StreamSignalWorkflow; tideReaderWorkflow: TideReaderWorkflow; tuberSwitchWorkflow?: TideReaderWorkflow; tideReaderOverlay?: TideReaderOverlaySnapshot } & Pick<ModuleActions, 'onOpen'>) {
+  tuberSwitchWorkflow = tuberSwitchWorkflow ?? {
+    profiles: [],
+    currentProfile: { id: '', name: '' },
+    selectedProfile: '',
+    busy: false,
+    onSelectProfile: () => undefined,
+  };
+  const [detailTarget, setDetailTarget] = useState<ProfilePreviewTarget | null>(null);
+  const streamSignal = streamSignalModule(modules);
+  const tideReader = tideReaderModule(modules);
+  const tuberSwitch = tuberSwitchModule(modules);
+  const activeProfileName = workflow.currentProfile.name || statusValue(streamSignal?.status ?? {}, 'activeProfile');
+  const goLiveDisabled = !streamSignal?.running || !activeProfileName || workflow.busy;
+  const setupMessage = streamSetupMessage(modules, workflow, tideReaderWorkflow, tuberSwitchWorkflow);
+  const setupTone = setupMessage.startsWith('✓') ? 'running' : 'warning';
 
   return (
     <main className="content" aria-labelledby="dashboard-title">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">StreamSignal workflow</p>
-          <h1 id="dashboard-title">Control Center</h1>
+          <h1 id="dashboard-title">Stream Control</h1>
+          <p>Profiles, overlays, and avatar setup for this session.</p>
         </div>
       </div>
 
-      <div className="dashboard-workflow-grid">
-        <section className="stream-control" aria-label="Stream preparation">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Announcements module</p>
-              <h2>
-                <img className="module-title-icon" src={streamSignalIcon} alt="" aria-hidden="true" />
-                StreamSignal
-              </h2>
+      <div className="dashboard-console">
+        <div className="dashboard-workspace">
+          <section className="current-setup-card" aria-labelledby="current-setup-title">
+            <div className="section-heading">
+              <h2 id="current-setup-title">Current Stream Setup</h2>
+              <StatusPill label={setupMessage} tone={setupTone} />
             </div>
-          </div>
 
-          <div className="profile-row">
-            <label>
-              <span>Profile</span>
-              <select value={workflow.selectedProfile} onChange={(event) => workflow.onSelectProfile(event.currentTarget.value)} disabled={offline || workflow.busy}>
-                <option value="">Select profile</option>
-                {workflow.profiles.map((profile) => (
-                  <option value={profile} key={profile}>
-                    {profile}
-                  </option>
-                ))}
-              </select>
-              <small>{destinationSummary}</small>
-            </label>
-          </div>
+            <div className="setup-profile-grid">
+              <SetupProfileCard
+                title="Announcements"
+                moduleName="StreamSignal"
+                icon={streamSignalIcon}
+                module={streamSignal}
+                profiles={workflow.profiles}
+                selectedProfile={workflow.selectedProfile}
+                currentProfile={activeProfileName}
+                busy={workflow.busy}
+                selected={detailTarget === 'streamsignal'}
+                onSelectProfile={workflow.onSelectProfile}
+                onPreview={() => setDetailTarget('streamsignal')}
+              />
+              <SetupProfileCard
+                title="Overlay"
+                moduleName="TideReader"
+                icon={tideReaderIcon}
+                module={tideReader}
+                profiles={tideReaderWorkflow.profiles}
+                selectedProfile={tideReaderWorkflow.selectedProfile}
+                currentProfile={tideReaderWorkflow.currentProfile.name}
+                busy={tideReaderWorkflow.busy}
+                selected={detailTarget === 'tidereader'}
+                onSelectProfile={tideReaderWorkflow.onSelectProfile}
+                onPreview={() => setDetailTarget('tidereader')}
+              />
+              <SetupProfileCard
+                title="Avatar"
+                moduleName="TuberSwitch"
+                icon={tuberSwitchIcon}
+                module={tuberSwitch}
+                profiles={tuberSwitchWorkflow.profiles}
+                selectedProfile={tuberSwitchWorkflow.selectedProfile}
+                currentProfile={tuberSwitchDisplayProfile(tuberSwitch, tuberSwitchWorkflow)}
+                busy={tuberSwitchWorkflow.busy}
+                error={tuberSwitchWorkflow.error}
+                selected={detailTarget === 'tuberswitch'}
+                onSelectProfile={tuberSwitchWorkflow.onSelectProfile}
+                onPreview={() => setDetailTarget('tuberswitch')}
+              />
+            </div>
 
-          <div className="primary-actions">
-            <button className="button-highlight" type="button" onClick={workflow.onGoLive} disabled={goLiveDisabled}>
-              <Radio aria-hidden="true" />
-              Go Live
-            </button>
-            <button className="button-danger" type="button" onClick={workflow.onEndStream} disabled={goLiveDisabled}>
-              <Square aria-hidden="true" />
-              End Stream
-            </button>
-          </div>
-
-          <div className="secondary-actions">
-            {offline ? (
-              <button className="button-primary" type="button" onClick={() => onStart(module?.id || 'streamsignal')}>
-                <Play aria-hidden="true" />
-                Start Service Mode
+            <div className="primary-actions setup-actions">
+              <button className="button-highlight" type="button" onClick={workflow.onGoLive} disabled={goLiveDisabled}>
+                <Radio aria-hidden="true" />
+                Go Live
               </button>
-            ) : null}
-            {module?.running ? (
-              <button type="button" onClick={() => onOpen(module.id)}>
-                <ExternalLink aria-hidden="true" />
-                Open StreamSignal
+              <button className="button-danger" type="button" onClick={workflow.onEndStream} disabled={goLiveDisabled}>
+                <Square aria-hidden="true" />
+                End Stream
               </button>
-            ) : null}
-            <button type="button" onClick={onRefresh}>
-              <RefreshCw aria-hidden="true" />
-              Refresh
-            </button>
-          </div>
-        </section>
+            </div>
+          </section>
 
-        <section className="section recent-activity" aria-label="Recent Activity">
-          <div className="section-heading">
-            <h2>Last Action</h2>
-            <strong>{latestActivity(workflow.announceStatus, workflow.endStreamStatus)}</strong>
-          </div>
-          <div className="activity-grid">
-            <ActivityCard title="Announcement" status={workflow.announceStatus} />
-            <ActivityCard title="End Stream" status={workflow.endStreamStatus} />
-          </div>
-        </section>
+          {workflow.pendingConfirmation ? (
+            <ConfirmationModal workflow={workflow} />
+          ) : null}
+        </div>
+
+        {detailTarget ? (
+          <ProfileDetailDrawer
+            target={detailTarget}
+            modules={modules}
+            workflow={workflow}
+            tideReaderWorkflow={tideReaderWorkflow}
+            tuberSwitchWorkflow={tuberSwitchWorkflow}
+            tideReaderOverlay={tideReaderOverlay}
+            onClose={() => setDetailTarget(null)}
+            onOpen={onOpen}
+          />
+        ) : null}
       </div>
-
-      {workflow.pendingConfirmation ? (
-        <ConfirmationModal workflow={workflow} />
-      ) : null}
-
-      <TideReaderPanel modules={modules} workflow={tideReaderWorkflow} overlaySnapshot={tideReaderOverlay} onStart={onStart} onOpen={onOpen} onRefresh={onRefresh} />
     </main>
+  );
+}
+
+function streamSetupMessage(modules: ModuleInfo[], workflow: StreamSignalWorkflow, tideReaderWorkflow: TideReaderWorkflow, tuberSwitchWorkflow: TideReaderWorkflow) {
+  const moduleChecks = [
+    { name: 'StreamSignal', module: streamSignalModule(modules) },
+    { name: 'TideReader', module: tideReaderModule(modules) },
+    { name: 'TuberSwitch', module: tuberSwitchModule(modules) },
+  ];
+  const unavailable = moduleChecks.find((entry) => !entry.module?.running);
+  if (unavailable) {
+    return `⚠ ${unavailable.name} unavailable.`;
+  }
+  if (!(workflow.currentProfile.name || workflow.selectedProfile)) {
+    return '⚠ No StreamSignal profile selected.';
+  }
+  if (!(tideReaderWorkflow.currentProfile.name || tideReaderWorkflow.selectedProfile)) {
+    return '⚠ No TideReader profile selected.';
+  }
+  if (!(tuberSwitchWorkflow.currentProfile.name || tuberSwitchWorkflow.selectedProfile)) {
+    return '⚠ No TuberSwitch profile selected.';
+  }
+  if (tuberSwitchWorkflow.error) {
+    return '⚠ Recovery actions require attention.';
+  }
+  return '✓ All modules connected and ready.';
+}
+
+function onlineModuleCount(modules: ModuleInfo[]) {
+  return [streamSignalModule(modules), tideReaderModule(modules), tuberSwitchModule(modules)].filter((module) => module?.running).length;
+}
+
+function readinessValue(module: ModuleInfo | null, profileName: string) {
+  if (!module?.running) {
+    return 'Offline';
+  }
+  return profileName ? 'Ready' : 'Needs profile';
+}
+
+function readinessTone(module: ModuleInfo | null, profileName: string): 'running' | 'warning' {
+  return module?.running && profileName ? 'running' : 'warning';
+}
+
+function tuberSwitchDisplayProfile(module: ModuleInfo | null, workflow: TideReaderWorkflow) {
+  const name = workflow.currentProfile.name || statusValue(module?.status ?? {}, 'activeProfile');
+  const mode = tuberSwitchModeLabel(statusValue(module?.status ?? {}, 'activeMode'));
+  if (!name) {
+    return '';
+  }
+  return mode && mode !== 'Unavailable' ? `${name} (${mode})` : name;
+}
+
+function SetupProfileCard({
+  title,
+  moduleName,
+  icon,
+  module,
+  profiles,
+  selectedProfile,
+  currentProfile,
+  busy,
+  error,
+  selected,
+  onSelectProfile,
+  onPreview,
+}: {
+  title: string;
+  moduleName: string;
+  icon: string;
+  module: ModuleInfo | null;
+  profiles: string[];
+  selectedProfile: string;
+  currentProfile: string;
+  busy: boolean;
+  error?: string;
+  selected: boolean;
+  onSelectProfile: (profile: string) => void;
+  onPreview: () => void;
+}) {
+  const offline = !module?.running;
+  return (
+    <article className={`setup-profile-card ${selected ? 'selected' : ''}`}>
+      <div className="setup-profile-header">
+        <div className="setup-profile-label-row">
+          <span>{title}</span>
+          <button type="button" className="detail-icon-button" onClick={onPreview} aria-label={`View ${moduleName} profile details`}>
+            <Eye aria-hidden="true" />
+          </button>
+        </div>
+        <img className="module-hero-icon" src={icon} alt="" aria-hidden="true" />
+      </div>
+      <h3>{moduleName}</h3>
+      <label className="profile-select-label">
+        <span className="sr-only">{moduleName} profile</span>
+        <select value={selectedProfile} onChange={(event) => onSelectProfile(event.currentTarget.value)} disabled={offline || busy}>
+          <option value="">Select profile</option>
+          {profiles.map((profile) => (
+            <option value={profile} key={profile}>
+              {profile}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="setup-profile-footer">
+        <span className={offline ? 'inactive' : 'active-dot'}>{offline ? `${moduleName} unavailable` : 'Active'}</span>
+        <small>{offline ? 'Offline' : currentProfile || 'No profile selected'}</small>
+      </div>
+      {error ? <p className="module-inline-message error">{error}</p> : null}
+    </article>
+  );
+}
+
+function ReadinessItem({ icon, label, value, tone }: { icon: 'modules' | 'obs' | 'internet' | 'twitch'; label: string; value: string; tone: 'running' | 'warning' }) {
+  const Icon = icon === 'modules' ? Package : icon === 'obs' ? Monitor : icon === 'internet' ? Globe2 : MessageSquare;
+  return (
+    <article className={`readiness-item readiness-${tone}`}>
+      <Icon aria-hidden="true" />
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
+function TopbarReadiness({ modules }: { modules: ModuleInfo[] }) {
+  const streamSignal = streamSignalModule(modules);
+  const onlineCount = onlineModuleCount(modules);
+  return (
+    <div className="topbar-readiness" aria-label="Stream readiness">
+      <ReadinessItem icon="modules" label="Modules" value={`${onlineCount} / 3`} tone={onlineCount === 3 ? 'running' : 'warning'} />
+      <ReadinessItem icon="obs" label="OBS" value={statusValue(streamSignal?.status ?? {}, 'obsStatus') || 'Connected'} tone="running" />
+      <ReadinessItem icon="internet" label="Internet" value={statusValue(streamSignal?.status ?? {}, 'internetStatus') || 'Stable'} tone="running" />
+      <ReadinessItem icon="twitch" label="Twitch" value={statusValue(streamSignal?.status ?? {}, 'twitchStatus') || 'Connected'} tone="running" />
+    </div>
+  );
+}
+
+function moduleVisual(id: string) {
+  if (id === 'tidereader') {
+    return { icon: tideReaderIcon, role: 'Now Playing Overlay' };
+  }
+  if (id === 'tuberswitch') {
+    return { icon: tuberSwitchIcon, role: 'Avatar & Redeems' };
+  }
+  return { icon: streamSignalIcon, role: 'Announcements & Events' };
+}
+
+function ModuleManagementStrip({
+  modules,
+  workflow,
+  tideReaderWorkflow,
+  tuberSwitchWorkflow,
+  onStart,
+  onOpen,
+  onRefresh,
+}: { modules: ModuleInfo[]; workflow: StreamSignalWorkflow; tideReaderWorkflow: TideReaderWorkflow; tuberSwitchWorkflow: TideReaderWorkflow } & ModuleActions) {
+  const moduleEntries = [
+    { id: 'streamsignal', name: 'StreamSignal', module: streamSignalModule(modules), profile: workflow.currentProfile.name || workflow.selectedProfile },
+    { id: 'tidereader', name: 'TideReader', module: tideReaderModule(modules), profile: tideReaderWorkflow.currentProfile.name || tideReaderWorkflow.selectedProfile },
+    { id: 'tuberswitch', name: 'TuberSwitch', module: tuberSwitchModule(modules), profile: tuberSwitchDisplayProfile(tuberSwitchModule(modules), tuberSwitchWorkflow) || tuberSwitchWorkflow.selectedProfile },
+  ];
+  return (
+    <div className="module-management-grid">
+      {moduleEntries.map((entry) => {
+        const module = entry.module;
+        const visual = moduleVisual(entry.id);
+        return (
+          <article className={`module-mini-card module-${entry.id}`} key={entry.id}>
+            <div className="module-mini-top">
+              <img className="module-hero-icon" src={visual.icon} alt="" aria-hidden="true" />
+              <StatusPill label={module ? healthLabel(module) : 'Offline'} tone={healthTone(module)} />
+            </div>
+            <div className="module-mini-copy">
+              <h3>{module?.name || entry.name}</h3>
+              <p>{visual.role}</p>
+            </div>
+            <div className="module-mini-profile">
+              <span>Active Profile</span>
+              <strong>{entry.profile || 'No profile selected'}</strong>
+            </div>
+            <div className="module-actions compact-actions">
+              {module && !module.running ? (
+                <button type="button" onClick={() => onStart(module.id)}>
+                  <Play aria-hidden="true" />
+                  Start
+                </button>
+              ) : null}
+              {module?.running ? (
+                <button type="button" onClick={() => onOpen(module.id)}>
+                  <ExternalLink aria-hidden="true" />
+                  Open
+                </button>
+              ) : null}
+              <button type="button" onClick={onRefresh}>
+                <RefreshCw aria-hidden="true" />
+                Refresh
+              </button>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function ProfileDetailDrawer({
+  target,
+  modules,
+  workflow,
+  tideReaderWorkflow,
+  tuberSwitchWorkflow,
+  tideReaderOverlay,
+  onClose,
+  onOpen,
+}: {
+  target: ProfilePreviewTarget;
+  modules: ModuleInfo[];
+  workflow: StreamSignalWorkflow;
+  tideReaderWorkflow: TideReaderWorkflow;
+  tuberSwitchWorkflow: TideReaderWorkflow;
+  tideReaderOverlay: TideReaderOverlaySnapshot;
+  onClose: () => void;
+  onOpen: (id: string) => void;
+}) {
+  useEffect(() => {
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  const meta = profileDetailMeta(target, modules, workflow, tideReaderWorkflow, tuberSwitchWorkflow);
+
+  return (
+    <div className="profile-detail-drawer-layer" role="presentation">
+      <button className="profile-detail-scrim" type="button" onClick={onClose} aria-label="Dismiss profile details" />
+      <aside className="profile-detail-drawer" aria-labelledby="profile-detail-title">
+        <button className="icon-button detail-close" type="button" onClick={onClose} aria-label="Close profile details">
+          <XCircle aria-hidden="true" />
+        </button>
+        <div className="profile-detail-header">
+          <img className="module-hero-icon" src={meta.icon} alt="" aria-hidden="true" />
+          <div>
+            <h2 id="profile-detail-title">{meta.profile}</h2>
+            <p>{meta.subtitle}</p>
+          </div>
+        </div>
+        {target === 'streamsignal' ? <StreamSignalPreview module={streamSignalModule(modules)} workflow={workflow} onOpen={onOpen} /> : null}
+        {target === 'tidereader' ? <TideReaderPreview workflow={tideReaderWorkflow} overlaySnapshot={tideReaderOverlay} onOpen={onOpen} /> : null}
+        {target === 'tuberswitch' ? <TuberSwitchPreview module={tuberSwitchModule(modules)} workflow={tuberSwitchWorkflow} onOpen={onOpen} /> : null}
+      </aside>
+    </div>
+  );
+}
+
+function profileDetailMeta(target: ProfilePreviewTarget, modules: ModuleInfo[], workflow: StreamSignalWorkflow, tideReaderWorkflow: TideReaderWorkflow, tuberSwitchWorkflow: TideReaderWorkflow) {
+  if (target === 'tidereader') {
+    return {
+      icon: tideReaderIcon,
+      profile: tideReaderWorkflow.currentProfile.name || tideReaderWorkflow.selectedProfile || 'TideReader Profile',
+      subtitle: 'TideReader Profile',
+    };
+  }
+  if (target === 'tuberswitch') {
+    return {
+      icon: tuberSwitchIcon,
+      profile: tuberSwitchDisplayProfile(tuberSwitchModule(modules), tuberSwitchWorkflow) || tuberSwitchWorkflow.selectedProfile || 'TuberSwitch Profile',
+      subtitle: 'TuberSwitch Profile',
+    };
+  }
+  return {
+    icon: streamSignalIcon,
+    profile: workflow.currentProfile.name || workflow.selectedProfile || 'StreamSignal Profile',
+    subtitle: 'StreamSignal Profile',
+  };
+}
+
+function StreamSignalPreview({ module, workflow, onOpen }: { module: ModuleInfo | null; workflow: StreamSignalWorkflow; onOpen: (id: string) => void }) {
+  const destinationCount = statusValue(module?.status ?? {}, 'destinationCount') || '0';
+  return (
+    <div className="drawer-content">
+      <PreviewField label="Destinations" value={destinationLabel(destinationCount)} />
+      <PreviewField label="Content Group" value={statusValue(module?.status ?? {}, 'destinationGroup') || 'Current selection'} />
+      <PreviewField label="Included Image" value={statusValue(module?.status ?? {}, 'image') || 'Managed in StreamSignal'} />
+      <PreviewField label="Template" value={workflow.currentProfile.name ? `${workflow.currentProfile.name} Template` : 'Managed in StreamSignal'} />
+      <PreviewField label="Last Used" value={formatRun(workflow.announceStatus.lastRun)} />
+      <PreviewField label="Last StreamSignal Action" value={latestActivity(workflow.announceStatus, workflow.endStreamStatus)} />
+      <button type="button" onClick={() => onOpen('streamsignal')}>
+        <ExternalLink aria-hidden="true" />
+        Open in StreamSignal
+      </button>
+    </div>
+  );
+}
+
+function TideReaderPreview({ workflow, overlaySnapshot, onOpen }: { workflow: TideReaderWorkflow; overlaySnapshot: TideReaderOverlaySnapshot; onOpen: (id: string) => void }) {
+  const settings = overlaySnapshot.settings ?? {};
+  const container = recordValue(settings, 'overlayContainerStyle');
+  return (
+    <div className="drawer-content">
+      <div className="drawer-preview-frame">
+        <TideReaderOverlayPreview snapshot={overlaySnapshot} />
+      </div>
+      <PreviewField label="Profile" value={workflow.currentProfile.name || workflow.selectedProfile || 'No profile selected'} />
+      <PreviewField label="Layout" value={textValue(settings, 'layout', textValue(settings, 'imagePosition', 'Current overlay'))} />
+      <PreviewField label="Album art" value={numberValue(settings, 'imageSizePx', 0) > 0 ? 'Visible' : 'Hidden'} />
+      <PreviewField label="Status pill" value={booleanValue(settings, 'showPlaybackState', true) ? 'Visible' : 'Hidden'} />
+      <PreviewField label="Background" value={formatStatusState(textValue(container, 'backgroundMode', 'Solid'))} />
+      <PreviewField label="Overlay URL" value={overlaySnapshot.overlayUrl || 'Managed in TideReader'} />
+      <button type="button" onClick={() => onOpen('tidereader')}>
+        <ExternalLink aria-hidden="true" />
+        Open in TideReader
+      </button>
+    </div>
+  );
+}
+
+function TuberSwitchPreview({ module, workflow, onOpen }: { module: ModuleInfo | null; workflow: TideReaderWorkflow; onOpen: (id: string) => void }) {
+  const activeMode = tuberSwitchModeLabel(statusValue(module?.status ?? {}, 'activeMode'));
+  return (
+    <div className="drawer-content">
+      <PreviewField label="Profile" value={workflow.currentProfile.name || workflow.selectedProfile || 'No profile selected'} />
+      <PreviewField label="Mode" value={activeMode} />
+      <PreviewField label="OBS configuration" value={statusValue(module?.status ?? {}, 'obsSummary') || 'Managed in TuberSwitch'} />
+      <PreviewField label="Redeems" value={statusValue(module?.status ?? {}, 'redeemsEnabled') || 'Managed in TuberSwitch'} />
+      <PreviewField label="Detection" value={statusValue(module?.status ?? {}, 'appDetectionStatus') || 'Managed in TuberSwitch'} />
+      <PreviewField label="Runtime" value={modeLabel(module?.mode || '')} />
+      <button type="button" onClick={() => onOpen('tuberswitch')}>
+        <ExternalLink aria-hidden="true" />
+        Open in TuberSwitch
+      </button>
+    </div>
+  );
+}
+
+function PreviewField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="preview-field">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 
@@ -525,6 +909,81 @@ function TideReaderPanel({
             Open TideReader
           </button>
         ) : null}
+        <button type="button" onClick={onRefresh}>
+          <RefreshCw aria-hidden="true" />
+          Refresh
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function TuberSwitchPanel({
+  modules,
+  workflow,
+  onStart,
+  onOpen,
+  onRefresh,
+}: { modules: ModuleInfo[]; workflow: TideReaderWorkflow } & ModuleActions) {
+  const module = tuberSwitchModule(modules);
+  const offline = !module || !module.running;
+  const activeProfile = workflow.currentProfile.name || statusValue(module?.status ?? {}, 'activeProfile') || 'No active profile';
+  const activeMode = tuberSwitchModeLabel(statusValue(module?.status ?? {}, 'activeMode'));
+
+  return (
+    <section className="module-workflow compact-module" aria-label="TuberSwitch">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Avatar module</p>
+          <h2>
+            <img className="module-title-icon" src={tuberSwitchIcon} alt="" aria-hidden="true" />
+            TuberSwitch
+          </h2>
+        </div>
+      </div>
+
+      <div className="module-summary-grid">
+        <article>
+          <span>Current Profile</span>
+          <strong>{offline ? 'Unavailable' : activeProfile}</strong>
+        </article>
+        <article>
+          <span>Current Mode</span>
+          <strong>{offline ? 'Unavailable' : activeMode}</strong>
+        </article>
+      </div>
+
+      {workflow.error ? <p className="module-inline-message error">{workflow.error}</p> : null}
+
+      <div className="profile-row">
+        <label>
+          <span>Profile</span>
+          <select
+            value={workflow.selectedProfile}
+            onChange={(event) => workflow.onSelectProfile(event.currentTarget.value)}
+            disabled={offline || workflow.busy}
+          >
+            <option value="">Select profile</option>
+            {workflow.profiles.map((profile) => (
+              <option value={profile} key={profile}>
+                {profile}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="secondary-actions">
+        {offline ? (
+          <button className="button-primary" type="button" onClick={() => onStart(module?.id || 'tuberswitch')}>
+            <Play aria-hidden="true" />
+            Start TuberSwitch
+          </button>
+        ) : null}
+        <button type="button" onClick={() => onOpen(module?.id || 'tuberswitch')}>
+          <ExternalLink aria-hidden="true" />
+          Open TuberSwitch
+        </button>
         <button type="button" onClick={onRefresh}>
           <RefreshCw aria-hidden="true" />
           Refresh
@@ -712,7 +1171,7 @@ function ModuleLocationCard({
   useEffect(() => {
     setDraftPath(config.executablePath);
   }, [config.executablePath]);
-  const icon = config.id === 'tidereader' ? tideReaderIcon : streamSignalIcon;
+  const icon = config.id === 'tidereader' ? tideReaderIcon : config.id === 'tuberswitch' ? tuberSwitchIcon : streamSignalIcon;
   const sourceLabel = config.pathSource === 'environment' ? 'Environment' : config.pathSource === 'configured' ? 'Configured' : config.pathSource === 'detected' ? 'Detected' : 'Fallback';
   function commitDraft() {
     if (draftPath !== config.executablePath) {
@@ -789,76 +1248,83 @@ export function DiagnosticsPage({
             <h2 id="module-diagnostics-title">Module Diagnostics</h2>
           </div>
         </div>
-
-        {modules.length === 0 ? (
-          <div className="empty-state compact">
-            <Server aria-hidden="true" />
-            <p>No Starsong modules detected.</p>
-            <span>Install and launch a compatible application to begin using LivePanel.</span>
-          </div>
-        ) : (
-          <div className="module-details">
-            {modules.map((module) => (
-              <article className="module-detail" key={module.id}>
-                <div className="module-card-topline">
-                  <div>
-                    <h2>{module.name}</h2>
-                    <p>{module.endpoint || module.executable || 'No endpoint available'}</p>
-                  </div>
-                  <StatusPill label={healthLabel(module)} tone={healthTone(module)} />
-                </div>
-
-                <dl className="detail-list">
-                  <div>
-                    <dt>Application</dt>
-                    <dd>{module.name}</dd>
-                  </div>
-                  <div>
-                    <dt>Version</dt>
-                    <dd>{module.version || 'Unknown'}</dd>
-                  </div>
-                  <div>
-                    <dt>Installed</dt>
-                    <dd>{installedLabel(module)}</dd>
-                  </div>
-                  <div>
-                    <dt>Running</dt>
-                    <dd>{module.running ? 'Yes' : 'No'}</dd>
-                  </div>
-                  <div>
-                    <dt>Mode</dt>
-                    <dd>{modeLabel(module.mode)}</dd>
-                  </div>
-                  <div>
-                    <dt>Health</dt>
-                    <dd>{module.error || module.healthText || module.healthStatus || 'Unknown'}</dd>
-                  </div>
-                </dl>
-
-                <CapabilityList capabilities={module.capabilities} />
-                <ModuleActionBar module={module} onStart={onStart} onOpen={onOpen} onRefresh={onRefresh} />
-
-                <div className="raw-status">
-                  <h3>Status</h3>
-                  {statusEntries(module.status).length === 0 ? (
-                    <p>No status data returned.</p>
-                  ) : (
-                    <dl>
-                      {statusEntries(module.status).map((entry) => (
-                        <div key={entry.key}>
-                          <dt>{entry.key}</dt>
-                          <dd>{entry.value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  )}
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
+        <DiagnosticsContent modules={modules} onStart={onStart} onOpen={onOpen} onRefresh={onRefresh} />
       </section>
     </main>
+  );
+}
+
+function DiagnosticsContent({ modules, onStart, onOpen, onRefresh }: { modules: ModuleInfo[] } & ModuleActions) {
+  if (modules.length === 0) {
+    return (
+      <div className="empty-state compact">
+        <Server aria-hidden="true" />
+        <p>No Starsong modules detected.</p>
+        <span>Install and launch a compatible application to begin using LivePanel.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="module-details">
+      {modules.map((module) => (
+        <article className="module-detail" key={module.id}>
+          <div className="module-card-topline">
+            <div>
+              <h2>{module.name}</h2>
+              <p>{module.endpoint || module.executable || 'No endpoint available'}</p>
+            </div>
+            <StatusPill label={healthLabel(module)} tone={healthTone(module)} />
+          </div>
+
+          <dl className="detail-list">
+            <div>
+              <dt>Application</dt>
+              <dd>{module.name}</dd>
+            </div>
+            <div>
+              <dt>Version</dt>
+              <dd>{module.version || 'Unknown'}</dd>
+            </div>
+            <div>
+              <dt>Installed</dt>
+              <dd>{installedLabel(module)}</dd>
+            </div>
+            <div>
+              <dt>Running</dt>
+              <dd>{module.running ? 'Yes' : 'No'}</dd>
+            </div>
+            <div>
+              <dt>Mode</dt>
+              <dd>{modeLabel(module.mode)}</dd>
+            </div>
+            <div>
+              <dt>Health</dt>
+              <dd>{module.error || module.healthText || module.healthStatus || 'Unknown'}</dd>
+            </div>
+          </dl>
+
+          <CapabilityList capabilities={module.capabilities} />
+          <ModuleActionBar module={module} onStart={onStart} onOpen={onOpen} onRefresh={onRefresh} />
+
+          <div className="raw-status">
+            <h3>Status</h3>
+            {statusEntries(module.status).length === 0 ? (
+              <p>No status data returned.</p>
+            ) : (
+              <dl>
+                {statusEntries(module.status).map((entry) => (
+                  <div key={entry.key}>
+                    <dt>{entry.key}</dt>
+                    <dd>{entry.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+          </div>
+        </article>
+      ))}
+    </div>
   );
 }
 
@@ -911,6 +1377,10 @@ export default function App() {
   const [tideReaderCurrentProfile, setTideReaderCurrentProfile] = useState<CurrentProfile>({ id: '', name: '' });
   const [tideReaderSelectedProfile, setTideReaderSelectedProfile] = useState('');
   const [tideReaderOverlay, setTideReaderOverlay] = useState<TideReaderOverlaySnapshot>(emptyTideReaderOverlay);
+  const [tuberSwitchProfiles, setTuberSwitchProfiles] = useState<string[]>([]);
+  const [tuberSwitchCurrentProfile, setTuberSwitchCurrentProfile] = useState<CurrentProfile>({ id: '', name: '' });
+  const [tuberSwitchSelectedProfile, setTuberSwitchSelectedProfile] = useState('');
+  const [tuberSwitchProfileError, setTuberSwitchProfileError] = useState('');
   const [announceStatus, setAnnounceStatus] = useState<AnnounceStatus>({ lastRun: '', success: false });
   const [endStreamStatus, setEndStreamStatus] = useState<EndStreamStatus>({ lastRun: '', success: false });
   const [workflowBusy, setWorkflowBusy] = useState(false);
@@ -979,6 +1449,31 @@ export default function App() {
     }
   }
 
+  async function loadTuberSwitchWorkflow(nextModules: ModuleInfo[]) {
+    const module = tuberSwitchModule(nextModules);
+    if (!module?.running) {
+      const empty = emptyProfileWorkflowState();
+      setTuberSwitchProfiles(empty.profiles);
+      setTuberSwitchCurrentProfile(empty.currentProfile);
+      setTuberSwitchSelectedProfile('');
+      return;
+    }
+    try {
+      const [nextProfiles, nextCurrentProfile] = await Promise.all([
+        getTuberSwitchProfiles(),
+        getTuberSwitchCurrentProfile(),
+      ]);
+      setTuberSwitchProfiles(nextProfiles);
+      setTuberSwitchCurrentProfile(nextCurrentProfile);
+      setTuberSwitchSelectedProfile((current) => nextCurrentProfile.name || (nextProfiles.includes(current) ? current : ''));
+    } catch {
+      const empty = emptyProfileWorkflowState();
+      setTuberSwitchProfiles(empty.profiles);
+      setTuberSwitchCurrentProfile(empty.currentProfile);
+      setTuberSwitchSelectedProfile('');
+    }
+  }
+
   async function load(refresh = false) {
     setLoading(true);
     const [next, configs] = await Promise.all([
@@ -987,14 +1482,14 @@ export default function App() {
     ]);
     setModules(next);
     setModuleConfigs(configs);
-    await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next)]);
+    await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next), loadTuberSwitchWorkflow(next)]);
     setLoading(false);
   }
 
   async function refreshDashboardState() {
     const next = await refreshModules();
     setModules(next);
-    await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next)]);
+    await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next), loadTuberSwitchWorkflow(next)]);
   }
 
   async function startAutoStartModules(nextModules: ModuleInfo[]) {
@@ -1019,7 +1514,7 @@ export default function App() {
         next = await startAutoStartModules(next);
       }
       setModules(next);
-      await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next)]);
+      await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next), loadTuberSwitchWorkflow(next)]);
       setLoading(false);
     })();
   }, []);
@@ -1038,7 +1533,7 @@ export default function App() {
     setLoading(true);
     const next = await action();
     setModules(next);
-    await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next)]);
+    await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next), loadTuberSwitchWorkflow(next)]);
     setLoading(false);
   }
 
@@ -1051,7 +1546,7 @@ export default function App() {
     setLoading(true);
     const next = await startAutoStartModules(modules);
     setModules(next);
-    await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next)]);
+    await Promise.all([loadStreamSignalWorkflow(next), loadTideReaderWorkflow(next), loadTuberSwitchWorkflow(next)]);
     setLoading(false);
   }
 
@@ -1157,31 +1652,68 @@ export default function App() {
     },
   };
 
+  const tuberSwitchWorkflow: TideReaderWorkflow = {
+    profiles: tuberSwitchProfiles,
+    currentProfile: tuberSwitchCurrentProfile,
+    selectedProfile: tuberSwitchSelectedProfile,
+    busy: workflowBusy,
+    error: tuberSwitchProfileError,
+    onSelectProfile: (profile: string) => {
+      void (async () => {
+        setTuberSwitchSelectedProfile(profile);
+        setTuberSwitchProfileError('');
+        if (!profile || profile === tuberSwitchCurrentProfile.name) {
+          return;
+        }
+        setWorkflowBusy(true);
+        const activated = await activateTuberSwitchProfile(profile);
+        if (activated.success) {
+          setTuberSwitchCurrentProfile({ id: activated.profileId || '', name: activated.profile || profile });
+          await load(true);
+        } else {
+          setTuberSwitchProfileError(activated.error || 'Profile activation failed.');
+        }
+        setWorkflowBusy(false);
+      })();
+    },
+  };
+
   return (
     <div className="app-shell">
+      <aside className="sidebar" aria-label="LivePanel navigation">
+        <div className="brand-lockup">
+          <Gauge aria-hidden="true" />
+          <div>
+            <strong>LivePanel</strong>
+            <span>Starsong Tools</span>
+          </div>
+        </div>
+        <nav className="sidenav" aria-label="Primary">
+          <button className={page === 'dashboard' ? 'active' : ''} onClick={() => setPage('dashboard')}>
+            <LayoutDashboard aria-hidden="true" />
+            Dashboard
+          </button>
+          <button className={page === 'settings' ? 'active' : ''} onClick={() => setPage('settings')}>
+            <Settings aria-hidden="true" />
+            Settings
+          </button>
+          <button className={page === 'diagnostics' ? 'active' : ''} onClick={() => setPage('diagnostics')}>
+            <Server aria-hidden="true" />
+            Diagnostics
+          </button>
+        </nav>
+        <button className="system-status-card" type="button" onClick={() => setPage('diagnostics')}>
+          <span className="system-dot" aria-hidden="true" />
+          <span>
+            <strong>All Systems</strong>
+            <small>Operational</small>
+          </span>
+          <ExternalLink aria-hidden="true" />
+        </button>
+      </aside>
       <div className="main-panel">
         <header className="topbar">
-          <div className="brand-lockup">
-            <Gauge aria-hidden="true" />
-            <div>
-              <strong>LivePanel</strong>
-              <span>Starsong Tools</span>
-            </div>
-          </div>
-          <nav className="topnav" aria-label="Primary">
-            <button className={page === 'dashboard' ? 'active' : ''} onClick={() => setPage('dashboard')}>
-              <LayoutDashboard aria-hidden="true" />
-              Dashboard
-            </button>
-            <button className={page === 'settings' ? 'active' : ''} onClick={() => setPage('settings')}>
-              <Settings aria-hidden="true" />
-              Settings
-            </button>
-            <button className={page === 'diagnostics' ? 'active' : ''} onClick={() => setPage('diagnostics')}>
-              <Server aria-hidden="true" />
-              Diagnostics
-            </button>
-          </nav>
+          <TopbarReadiness modules={modules} />
           <button className="icon-button" onClick={() => void load(true)} aria-label="Refresh modules" title="Refresh modules">
             <RefreshCw aria-hidden="true" />
           </button>
@@ -1192,10 +1724,9 @@ export default function App() {
             modules={modules}
             workflow={workflow}
             tideReaderWorkflow={tideReaderWorkflow}
+            tuberSwitchWorkflow={tuberSwitchWorkflow}
             tideReaderOverlay={tideReaderOverlay}
-            onStart={(id) => void runAction(() => startModule(id))}
             onOpen={(id) => void runAction(() => openModule(id))}
-            onRefresh={() => void load(true)}
           />
         ) : page === 'settings' ? (
           <SettingsPage

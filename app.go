@@ -152,11 +152,11 @@ func (a *App) GetStreamSignalCurrentProfile() sip.CurrentProfileResponse {
 func (a *App) ActivateStreamSignalProfile(profile string) sip.ProfileActivationResponse {
 	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
 	if err != nil {
-		return sip.ProfileActivationResponse{}
+		return sip.ProfileActivationResponse{Success: false, Error: err.Error()}
 	}
 	activated, err := client.ActivateProfile(a.requestContext(), profile)
 	if err != nil {
-		return sip.ProfileActivationResponse{}
+		return sip.ProfileActivationResponse{Success: false, Error: err.Error()}
 	}
 	_, _ = a.service.Refresh(a.requestContext())
 	return activated
@@ -190,11 +190,49 @@ func (a *App) GetTideReaderCurrentProfile() sip.CurrentProfileResponse {
 func (a *App) ActivateTideReaderProfile(profile string) sip.ProfileActivationResponse {
 	client, err := a.sipClientForModule("tidereader", "TideReader")
 	if err != nil {
-		return sip.ProfileActivationResponse{}
+		return sip.ProfileActivationResponse{Success: false, Error: err.Error()}
 	}
 	activated, err := client.ActivateProfile(a.requestContext(), profile)
 	if err != nil {
-		return sip.ProfileActivationResponse{}
+		return sip.ProfileActivationResponse{Success: false, Error: err.Error()}
+	}
+	_, _ = a.service.Refresh(a.requestContext())
+	return activated
+}
+
+func (a *App) GetTuberSwitchProfiles() sip.ProfilesResponse {
+	client, err := a.sipClientForModule("tuberswitch", "TuberSwitch")
+	if err != nil {
+		return sip.ProfilesResponse{Profiles: []string{}}
+	}
+	ctx := a.requestContext()
+	profiles, err := client.GetProfiles(ctx)
+	if err != nil {
+		return sip.ProfilesResponse{Profiles: []string{}}
+	}
+	return profiles
+}
+
+func (a *App) GetTuberSwitchCurrentProfile() sip.CurrentProfileResponse {
+	client, err := a.sipClientForModule("tuberswitch", "TuberSwitch")
+	if err != nil {
+		return sip.CurrentProfileResponse{}
+	}
+	current, err := client.GetCurrentProfile(a.requestContext())
+	if err != nil {
+		return sip.CurrentProfileResponse{}
+	}
+	return current
+}
+
+func (a *App) ActivateTuberSwitchProfile(profile string) sip.ProfileActivationResponse {
+	client, err := a.sipClientForModule("tuberswitch", "TuberSwitch")
+	if err != nil {
+		return sip.ProfileActivationResponse{Success: false, Error: err.Error()}
+	}
+	activated, err := client.ActivateProfile(a.requestContext(), profile)
+	if err != nil {
+		return sip.ProfileActivationResponse{Success: false, Error: err.Error()}
 	}
 	_, _ = a.service.Refresh(a.requestContext())
 	return activated
@@ -378,6 +416,15 @@ func moduleDefinitions() []moduleDefinition {
 			Endpoints:      localEndpoints(47030, 47039),
 			Candidates:     tideReaderExecutableCandidates,
 		},
+		{
+			ID:             "tuberswitch",
+			Name:           "TuberSwitch",
+			ExecutableEnv:  "LIVEPANEL_TUBERSWITCH_EXECUTABLE",
+			EndpointEnv:    "LIVEPANEL_TUBERSWITCH_ENDPOINT",
+			ExecutableName: "TuberSwitch.exe",
+			Endpoints:      localEndpoints(47040, 47049),
+			Candidates:     tuberSwitchExecutableCandidates,
+		},
 	}
 }
 
@@ -490,6 +537,52 @@ func tideReaderExecutableCandidates() []string {
 
 func configuredTideReaderEndpoints() []string {
 	definition, _ := moduleDefinitionByID("tidereader")
+	return endpointsForDefinition(definition)
+}
+
+func configuredTuberSwitchExecutable() string {
+	definition, _ := moduleDefinitionByID("tuberswitch")
+	return executableForDefinition(definition, ModuleConfig{})
+}
+
+func tuberSwitchExecutableCandidates() []string {
+	names := []string{"TuberSwitch-dev", "TuberSwitch", "TuberSwitch.exe"}
+	if runtime.GOOS == "windows" {
+		names = []string{"TuberSwitch.exe"}
+	}
+
+	candidates := make([]string, 0, len(names)*4)
+	for _, name := range names {
+		candidates = append(candidates,
+			filepath.Clean(filepath.Join("..", "TuberSwitch", "build", "bin", name)),
+			filepath.Clean(filepath.Join("..", "TuberSwitch", "dist", name)),
+		)
+	}
+	for _, base := range []string{os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)"), os.Getenv("LocalAppData")} {
+		base = strings.TrimSpace(base)
+		if base == "" {
+			continue
+		}
+		candidates = append(candidates,
+			filepath.Join(base, "DRDohr", "TuberSwitch", "TuberSwitch.exe"),
+			filepath.Join(base, "TuberSwitch", "TuberSwitch.exe"),
+			filepath.Join(base, "Programs", "TuberSwitch", "TuberSwitch.exe"),
+		)
+	}
+	if executable, err := os.Executable(); err == nil {
+		binDir := filepath.Dir(executable)
+		for _, name := range names {
+			candidates = append(candidates,
+				filepath.Clean(filepath.Join(binDir, "..", "..", "..", "TuberSwitch", "build", "bin", name)),
+				filepath.Clean(filepath.Join(binDir, "..", "..", "..", "TuberSwitch", "dist", name)),
+			)
+		}
+	}
+	return candidates
+}
+
+func configuredTuberSwitchEndpoints() []string {
+	definition, _ := moduleDefinitionByID("tuberswitch")
 	return endpointsForDefinition(definition)
 }
 

@@ -2,9 +2,19 @@
 
 LivePanel is a local desktop control panel for Starsong Tools.
 
-The long-term intent is for LivePanel to provide a single place to see status, launch tools, and run common actions across the Starsong Tools suite. The current implementation supports StreamSignal and TideReader.
+The long-term intent is for LivePanel to provide a single place to see status, launch tools, and run common actions across the Starsong Tools suite. The current implementation supports StreamSignal, TideReader, and TuberSwitch.
 
-Today, LivePanel can start StreamSignal and TideReader in service mode, show module status, switch active profiles, send StreamSignal announcements, run the StreamSignal end-stream workflow, and preview the active TideReader overlay without opening the full tool interfaces.
+Today, LivePanel can start StreamSignal, TideReader, and TuberSwitch in service mode, show module status, switch active profiles, send StreamSignal announcements, run the StreamSignal end-stream workflow, and preview the active TideReader overlay without opening the full tool interfaces.
+
+## Dashboard
+
+LivePanel's Dashboard is a compact stream control surface:
+
+- The top bar shows stream readiness for modules, OBS, internet, and Twitch.
+- **Current Stream Setup** selects the active StreamSignal, TideReader, and TuberSwitch profiles for the session.
+- `Go Live` and `End Stream` live in the setup card so stream lifecycle controls stay next to the selected profiles.
+- App detail buttons open an on-demand right-side drawer for profile-specific details.
+- Module health, raw SIP payloads, endpoints, resolved executable paths, and start/open controls live in the separate Diagnostics tab.
 
 ## Current StreamSignal Support
 
@@ -31,9 +41,20 @@ LivePanel does not store StreamSignal credentials, profiles, or stream destinati
 
 LivePanel only reads TideReader's local overlay JSON and cover art from loopback HTTP URLs. Remote overlay and artwork URLs are rejected.
 
+## Current TuberSwitch Support
+
+- Starts TuberSwitch with `--service`.
+- Opens TuberSwitch with `--show` when the full UI is needed.
+- Lists available TuberSwitch profiles.
+- Changes the active TuberSwitch profile.
+- Shows the active TuberSwitch profile and mode in the current stream setup.
+- Provides diagnostics for the local TuberSwitch SIP connection.
+
+LivePanel does not store TuberSwitch account, OBS, redeem, avatar, or detection settings. Those stay in TuberSwitch.
+
 ## Local Connections
 
-LivePanel talks to StreamSignal and TideReader over a local HTTP interface called SIP, short for **Starsong Integration Protocol**.
+LivePanel talks to StreamSignal, TideReader, and TuberSwitch over a local HTTP interface called SIP, short for **Starsong Integration Protocol**.
 
 For this repository, the important part is simple: SIP is the local contract LivePanel uses to ask tools for status and to trigger tool-owned actions. It is not a public web API, and LivePanel only accepts local loopback SIP endpoints.
 
@@ -55,6 +76,15 @@ http://127.0.0.1:47031
 http://127.0.0.1:47039
 ```
 
+And TuberSwitch SIP endpoints:
+
+```text
+http://127.0.0.1:47040
+http://127.0.0.1:47041
+...
+http://127.0.0.1:47049
+```
+
 TideReader overlay preview data defaults to:
 
 ```text
@@ -65,7 +95,7 @@ http://127.0.0.1:17655/overlay-settings.json
 
 ## Configuration
 
-LivePanel's Settings page includes **Module Locations** controls for StreamSignal, TideReader, and future catalogued modules. Users can paste an executable path, browse for the executable, or clear a saved override to return to auto-detection.
+LivePanel's Settings page includes **Module Locations** controls for StreamSignal, TideReader, TuberSwitch, and future catalogued modules. Users can paste an executable path, browse for the executable, or clear a saved override to return to auto-detection.
 
 Executable path resolution order is:
 
@@ -83,6 +113,8 @@ Optional environment variables:
 | `LIVEPANEL_TIDEREADER_EXECUTABLE` | Explicit path to `TideReader.Desktop.exe`. |
 | `LIVEPANEL_TIDEREADER_ENDPOINT` | Explicit local TideReader SIP endpoint. |
 | `LIVEPANEL_TIDEREADER_OVERLAY_URL` | Explicit local TideReader overlay URL. |
+| `LIVEPANEL_TUBERSWITCH_EXECUTABLE` | Explicit path to `TuberSwitch.exe`. |
+| `LIVEPANEL_TUBERSWITCH_ENDPOINT` | Explicit local TuberSwitch SIP endpoint. |
 | `LIVEPANEL_CONFIG_PATH` | Explicit path for LivePanel's persisted config JSON. Mostly useful for tests/dev. |
 | `STREAMSIGNAL_ENV` | Passed through to StreamSignal when LivePanel starts it. Use `dev` for the StreamSignal dev data store. |
 
@@ -169,5 +201,6 @@ Example Windows launch using StreamSignal's dev data store and explicit dev tool
 $env:STREAMSIGNAL_ENV = "dev"
 $env:LIVEPANEL_STREAMSIGNAL_EXECUTABLE = "C:\path\to\StreamSignal.exe"
 $env:LIVEPANEL_TIDEREADER_EXECUTABLE = "C:\path\to\TideReader.Desktop.exe"
+$env:LIVEPANEL_TUBERSWITCH_EXECUTABLE = "C:\path\to\TuberSwitch.exe"
 .\build\bin\LivePanel.exe
 ```

@@ -9,20 +9,20 @@ The application currently:
 - Restricts configured SIP endpoints to local HTTP loopback hosts.
 - Uses bounded HTTP client timeouts for SIP requests.
 - Limits decoded SIP response bodies to 1 MiB.
-- Starts StreamSignal in `--service` mode for managed launches.
+- Starts StreamSignal, TideReader, and TuberSwitch in `--service` mode for managed launches.
 - Shuts down processes it launched when LivePanel exits.
 
 LivePanel does not expose a public network service.
 
 ## Sensitive Data
 
-LivePanel does not own StreamSignal credentials, profile storage, or destination secrets. Those remain in StreamSignal's Windows data stores. Avoid copying production credential stores into test fixtures or repository files.
+LivePanel does not own StreamSignal credentials, TideReader overlay/profile data, TuberSwitch account or avatar settings, profile storage, or destination secrets. Those remain in the owning Starsong tools and their Windows data stores. Avoid copying production credential stores into test fixtures or repository files.
 
 ## Configuration Safety
 
-`LIVEPANEL_STREAMSIGNAL_EXECUTABLE` should point only to a trusted local StreamSignal executable.
+`LIVEPANEL_STREAMSIGNAL_EXECUTABLE`, `LIVEPANEL_TIDEREADER_EXECUTABLE`, and `LIVEPANEL_TUBERSWITCH_EXECUTABLE` should point only to trusted local Starsong tool executables.
 
-`LIVEPANEL_STREAMSIGNAL_ENDPOINT` must use local HTTP loopback, such as:
+`LIVEPANEL_STREAMSIGNAL_ENDPOINT`, `LIVEPANEL_TIDEREADER_ENDPOINT`, and `LIVEPANEL_TUBERSWITCH_ENDPOINT` must use local HTTP loopback, such as:
 
 ```text
 http://127.0.0.1:47020
@@ -30,6 +30,8 @@ http://localhost:47020
 ```
 
 Remote hosts and non-HTTP schemes are rejected.
+
+`LIVEPANEL_TIDEREADER_OVERLAY_URL` is also restricted to local HTTP loopback. LivePanel rejects remote overlay URLs and remote artwork URLs when rendering the TideReader preview.
 
 ## Reporting
 

@@ -38,6 +38,12 @@ type ProfileActivationResponse struct {
 	Success   bool   `json:"success"`
 	Profile   string `json:"profile,omitempty"`
 	ProfileID string `json:"profileId,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+type ErrorResponse struct {
+	Success bool   `json:"success"`
+	Error   string `json:"error"`
 }
 
 type AnnounceResponse struct {

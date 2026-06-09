@@ -221,6 +221,10 @@ func (c *Client) post(ctx context.Context, path string, in any, out any) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var errorResponse ErrorResponse
+		if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&errorResponse); err == nil && strings.TrimSpace(errorResponse.Error) != "" {
+			return errors.New(errorResponse.Error)
+		}
 		return fmt.Errorf("%w: status %d", ErrInvalidResponse, resp.StatusCode)
 	}
 
@@ -249,6 +253,10 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var errorResponse ErrorResponse
+		if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&errorResponse); err == nil && strings.TrimSpace(errorResponse.Error) != "" {
+			return errors.New(errorResponse.Error)
+		}
 		return fmt.Errorf("%w: status %d", ErrInvalidResponse, resp.StatusCode)
 	}
 

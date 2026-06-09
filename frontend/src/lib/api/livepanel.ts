@@ -1,6 +1,7 @@
 import {
   ActivateStreamSignalProfile,
   ActivateTideReaderProfile,
+  ActivateTuberSwitchProfile,
   AnnounceStreamSignal,
   ConfirmStreamSignalAnnouncement,
   EndStreamSignalStream,
@@ -15,6 +16,8 @@ import {
   GetTideReaderCurrentProfile,
   GetTideReaderOverlaySnapshot,
   GetTideReaderProfiles,
+  GetTuberSwitchCurrentProfile,
+  GetTuberSwitchProfiles,
   OpenModule,
   PickModuleExecutablePath,
   RefreshModules,
@@ -52,6 +55,7 @@ export type ProfileActivation = {
   success: boolean;
   profile?: string;
   profileId?: string;
+  error?: string;
 };
 
 export type AnnounceResult = {
@@ -169,6 +173,19 @@ export function getTideReaderOverlaySnapshot(): Promise<TideReaderOverlaySnapsho
 
 export function activateTideReaderProfile(profile: string): Promise<ProfileActivation> {
   return ActivateTideReaderProfile(profile);
+}
+
+export async function getTuberSwitchProfiles(): Promise<string[]> {
+  const response = await GetTuberSwitchProfiles();
+  return response.profiles ?? [];
+}
+
+export function getTuberSwitchCurrentProfile(): Promise<CurrentProfile> {
+  return GetTuberSwitchCurrentProfile();
+}
+
+export function activateTuberSwitchProfile(profile: string): Promise<ProfileActivation> {
+  return ActivateTuberSwitchProfile(profile);
 }
 
 export function announceStreamSignal(): Promise<AnnounceResult> {

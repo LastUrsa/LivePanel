@@ -76,6 +76,39 @@ func TestTideReaderExecutableCandidatesPreferLocalBuild(t *testing.T) {
 	}
 }
 
+func TestConfiguredTuberSwitchEndpointOverride(t *testing.T) {
+	t.Setenv("LIVEPANEL_TUBERSWITCH_ENDPOINT", "http://127.0.0.1:49997")
+
+	endpoints := configuredTuberSwitchEndpoints()
+	if len(endpoints) != 1 || endpoints[0] != "http://127.0.0.1:49997" {
+		t.Fatalf("unexpected configured endpoints: %+v", endpoints)
+	}
+}
+
+func TestConfiguredTuberSwitchEndpointOverrideRejectsRemoteHosts(t *testing.T) {
+	t.Setenv("LIVEPANEL_TUBERSWITCH_ENDPOINT", "http://example.com:47040")
+
+	endpoints := configuredTuberSwitchEndpoints()
+	if len(endpoints) != 10 || endpoints[0] != "http://127.0.0.1:47040" || endpoints[9] != "http://127.0.0.1:47049" {
+		t.Fatalf("expected fallback local endpoints, got %+v", endpoints)
+	}
+}
+
+func TestTuberSwitchExecutableCandidatesPreferLocalBuild(t *testing.T) {
+	candidates := tuberSwitchExecutableCandidates()
+	if len(candidates) < 1 {
+		t.Fatal("expected executable candidates")
+	}
+	executable := "TuberSwitch-dev"
+	if runtime.GOOS == "windows" {
+		executable = "TuberSwitch.exe"
+	}
+	want := filepath.Clean(filepath.Join("..", "TuberSwitch", "build", "bin", executable))
+	if candidates[0] != want {
+		t.Fatalf("expected first candidate %q, got %q", want, candidates[0])
+	}
+}
+
 func TestModuleExecutableConfigUsesSavedPathAfterEnvironment(t *testing.T) {
 	tmp := t.TempDir()
 	savedPath := filepath.Join(tmp, "StreamSignal.exe")
@@ -158,8 +191,8 @@ func TestAppRefreshModulesUsesConfiguredStreamSignalEndpoint(t *testing.T) {
 	app := NewApp()
 	modules := app.RefreshModules()
 
-	if len(modules) != 2 {
-		t.Fatalf("expected two managed modules, got %+v", modules)
+	if len(modules) != 3 {
+		t.Fatalf("expected three managed modules, got %+v", modules)
 	}
 	streamSignal := findModule(modules, "streamsignal")
 	if streamSignal == nil || streamSignal.Name != "StreamSignal" || !streamSignal.Healthy {
@@ -167,7 +200,7 @@ func TestAppRefreshModulesUsesConfiguredStreamSignalEndpoint(t *testing.T) {
 	}
 	listed := app.GetModules()
 	listedStreamSignal := findModule(listed, "streamsignal")
-	if len(listed) != 2 || listedStreamSignal == nil || listedStreamSignal.Endpoint != server.URL {
+	if len(listed) != 3 || listedStreamSignal == nil || listedStreamSignal.Endpoint != server.URL {
 		t.Fatalf("expected refreshed module to be listed, got %+v", listed)
 	}
 }
@@ -200,6 +233,37 @@ func TestAppRefreshModulesUsesConfiguredTideReaderEndpoint(t *testing.T) {
 	}
 	if tideReader.Endpoint != server.URL || tideReader.Status["activeProfile"] != "Listening Party" {
 		t.Fatalf("expected TideReader SIP status to be retained, got %+v", tideReader)
+	}
+}
+
+func TestAppRefreshModulesUsesConfiguredTuberSwitchEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/app":
+			_, _ = w.Write([]byte(`{"appId":"tuberswitch","name":"TuberSwitch","version":"0.5.0","mode":"service","protocolVersion":"1.1"}`))
+		case "/api/v1/health":
+			_, _ = w.Write([]byte(`{"status":"ready","message":"TuberSwitch operational"}`))
+		case "/api/v1/capabilities":
+			_, _ = w.Write([]byte(`{"supportsProfiles":true,"supportsStatusReporting":true}`))
+		case "/api/v1/status":
+			_, _ = w.Write([]byte(`{"state":"ready","message":"Profile active","healthy":true,"activeProfile":"Gaming Stream","activeProfileId":"gaming","activeMode":"3d"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("LIVEPANEL_TUBERSWITCH_ENDPOINT", server.URL)
+
+	app := NewApp()
+	modules := app.RefreshModules()
+	tuberSwitch := findModule(modules, "tuberswitch")
+
+	if tuberSwitch == nil || tuberSwitch.Name != "TuberSwitch" || !tuberSwitch.Healthy {
+		t.Fatalf("unexpected TuberSwitch module from app refresh: %+v", modules)
+	}
+	if tuberSwitch.Endpoint != server.URL || tuberSwitch.Status["activeProfile"] != "Gaming Stream" || tuberSwitch.Status["activeMode"] != "3d" {
+		t.Fatalf("expected TuberSwitch SIP status to be retained, got %+v", tuberSwitch)
 	}
 }
 
