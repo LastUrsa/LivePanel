@@ -355,6 +355,45 @@ describe('Dashboard', () => {
     expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
   });
 
+  it('shows StreamSignal drawer metadata from SIP status', async () => {
+    const user = userEvent.setup();
+    render(
+      <Dashboard
+        modules={[
+          moduleFixture({
+            status: {
+              state: 'idle',
+              message: 'Ready',
+              destinationCount: 3,
+              enabledDestinationCount: 2,
+              destinationGroup: 'Main Announcements',
+              destinationPlatforms: ['bluesky', 'discord'],
+              image: 'Announcement image + Bluesky card thumbnail',
+              template: '2 destination templates',
+              streamTitle: 'Late Night Music',
+            },
+          }),
+          tideReaderModuleFixture(),
+          tuberSwitchModuleFixture(),
+        ]}
+        workflow={workflowFixture()}
+        tideReaderWorkflow={tideReaderWorkflowFixture()}
+        tuberSwitchWorkflow={tuberSwitchWorkflowFixture()}
+        {...actionFixture()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'View StreamSignal profile details' }));
+
+    expect(screen.getByText('Late Night Music')).toBeInTheDocument();
+    expect(screen.getByText('2 enabled of 3 destinations')).toBeInTheDocument();
+    expect(screen.getByText('Main Announcements')).toBeInTheDocument();
+    expect(screen.getByText('Bluesky, Discord')).toBeInTheDocument();
+    expect(screen.getByText('Announcement image + Bluesky card thumbnail')).toBeInTheDocument();
+    expect(screen.getByText('2 destination templates')).toBeInTheDocument();
+    expect(screen.queryByText('Gaming Stream Template')).not.toBeInTheDocument();
+  });
+
   it('displays duplicate confirmation modal', () => {
     const actions = actionFixture();
     render(

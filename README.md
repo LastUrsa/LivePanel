@@ -21,7 +21,7 @@ LivePanel's Dashboard is a compact stream control surface:
 - Starts StreamSignal with `--service`.
 - Opens StreamSignal with `--show` when the full UI is needed.
 - Stops StreamSignal processes that LivePanel started when LivePanel closes.
-- Shows StreamSignal mode, active profile, destination count, and recent workflow activity.
+- Shows StreamSignal mode, active profile, destination group, enabled destination count, platform summary, stream metadata, image summary, template summary, and recent workflow activity.
 - Lists available StreamSignal profiles.
 - Changes the active StreamSignal profile.
 - Runs StreamSignal's `Go Live` announcement workflow.

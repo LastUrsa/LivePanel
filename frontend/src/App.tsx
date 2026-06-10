@@ -181,6 +181,11 @@ function statusValue(status: Record<string, unknown>, key: string) {
   return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : '';
 }
 
+function statusListValue(status: Record<string, unknown>, key: string) {
+  const value = status?.[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim() !== '') : [];
+}
+
 function recordValue(record: Record<string, unknown>, key: string) {
   const value = record?.[key];
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -374,6 +379,20 @@ function destinationLabel(value: string) {
     return 'Unknown';
   }
   return value === '1' ? '1 Destination' : `${value} Destinations`;
+}
+
+function streamSignalDestinationLabel(status: Record<string, unknown>) {
+  const total = statusValue(status, 'destinationCount');
+  const enabled = statusValue(status, 'enabledDestinationCount');
+  if (enabled && total && enabled !== total) {
+    return `${enabled} enabled of ${destinationLabel(total).toLowerCase()}`;
+  }
+  return destinationLabel(enabled || total);
+}
+
+function streamSignalPlatformLabel(status: Record<string, unknown>) {
+  const platforms = statusListValue(status, 'destinationPlatforms');
+  return platforms.length > 0 ? platforms.map(formatStatusState).join(', ') : 'Managed in StreamSignal';
 }
 
 function latestActivity(announceStatus: AnnounceStatus, endStreamStatus: EndStreamStatus) {
@@ -813,13 +832,15 @@ function profileDetailMeta(target: ProfilePreviewTarget, modules: ModuleInfo[], 
 }
 
 function StreamSignalPreview({ module, workflow, onOpen }: { module: ModuleInfo | null; workflow: StreamSignalWorkflow; onOpen: (id: string) => void }) {
-  const destinationCount = statusValue(module?.status ?? {}, 'destinationCount') || '0';
+  const status = module?.status ?? {};
   return (
     <div className="drawer-content">
-      <PreviewField label="Destinations" value={destinationLabel(destinationCount)} />
-      <PreviewField label="Content Group" value={statusValue(module?.status ?? {}, 'destinationGroup') || 'Current selection'} />
-      <PreviewField label="Included Image" value={statusValue(module?.status ?? {}, 'image') || 'Managed in StreamSignal'} />
-      <PreviewField label="Template" value={workflow.currentProfile.name ? `${workflow.currentProfile.name} Template` : 'Managed in StreamSignal'} />
+      <PreviewField label="Stream title" value={statusValue(status, 'streamTitle') || 'Managed in StreamSignal'} />
+      <PreviewField label="Destinations" value={streamSignalDestinationLabel(status)} />
+      <PreviewField label="Content group" value={statusValue(status, 'destinationGroup') || 'Current selection'} />
+      <PreviewField label="Platforms" value={streamSignalPlatformLabel(status)} />
+      <PreviewField label="Included image" value={statusValue(status, 'image') || 'Managed in StreamSignal'} />
+      <PreviewField label="Template" value={statusValue(status, 'template') || 'Managed in StreamSignal'} />
       <PreviewField label="Last Used" value={formatRun(workflow.announceStatus.lastRun)} />
       <PreviewField label="Last StreamSignal Action" value={latestActivity(workflow.announceStatus, workflow.endStreamStatus)} />
       <button type="button" onClick={() => onOpen('streamsignal')}>
