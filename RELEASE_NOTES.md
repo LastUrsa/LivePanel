@@ -18,6 +18,13 @@ Release notes are part of the LivePanel release process. Before publishing a rel
   - TideReader v0.5.0 or newer.
   - TuberSwitch v0.6.0 or newer.
 
+### Security And Validation
+
+- Keeps SIP and TideReader overlay reads restricted to local HTTP loopback endpoints.
+- Uses bounded HTTP timeouts and response-size limits for local integration reads.
+- Stores only LivePanel module executable path overrides; app credentials and profile data remain in the owning tools.
+- Release validation includes frontend tests/build, Go tests, frontend dependency audit, and `govulncheck`.
+
 ### Release Artifacts
 
 - `LivePanel-v0.1.0-windows-amd64-installer.exe`

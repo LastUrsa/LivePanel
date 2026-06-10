@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -709,7 +710,7 @@ func fetchLocalJSON(ctx context.Context, rawURL string, target interface{}) erro
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("TideReader overlay returned %s", response.Status)
 	}
-	return json.NewDecoder(response.Body).Decode(target)
+	return json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(target)
 }
 
 func stringValue(value interface{}) string {

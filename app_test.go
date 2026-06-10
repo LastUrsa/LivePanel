@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -305,6 +306,19 @@ func TestTideReaderOverlayURLsRejectRemoteHosts(t *testing.T) {
 	}
 	if got := overlaySiblingURL("http://127.0.0.1:17655/overlay", "http://example.com/cover.jpg"); got != "" {
 		t.Fatalf("expected remote artwork URL to be rejected, got %q", got)
+	}
+}
+
+func TestFetchLocalJSONLimitsOverlayResponseSize(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"payload":"` + strings.Repeat("x", (1<<20)+1) + `"}`))
+	}))
+	defer server.Close()
+
+	var payload map[string]interface{}
+	if err := fetchLocalJSON(t.Context(), server.URL, &payload); err == nil {
+		t.Fatal("expected oversized overlay JSON to fail")
 	}
 }
 

@@ -16,52 +16,16 @@ LivePanel requires SIP and service-mode compliant versions of the dependent Star
 | TideReader | v0.5.0 |
 | TuberSwitch | v0.6.0 |
 
-## Dashboard
+## What LivePanel Does
 
-LivePanel's Dashboard is a compact stream control surface:
+- Starts StreamSignal, TideReader, and TuberSwitch with `--service`.
+- Opens each app with `--show` when the full UI is needed.
+- Shows module health, active profiles, app detail drawers, SIP endpoints, resolved executable paths, capabilities, and raw status payloads.
+- Switches StreamSignal, TideReader, and TuberSwitch profiles for the current stream session.
+- Runs StreamSignal `Go Live` and `End Stream` workflows.
+- Previews TideReader's active overlay from local now-playing and overlay settings JSON.
 
-- The top bar shows stream readiness for modules, OBS, internet, and Twitch.
-- **Current Stream Setup** selects the active StreamSignal, TideReader, and TuberSwitch profiles for the session.
-- `Go Live` and `End Stream` live in the setup card so stream lifecycle controls stay next to the selected profiles.
-- App detail buttons open an on-demand right-side drawer for profile-specific details.
-- Module health, raw SIP payloads, endpoints, resolved executable paths, and start/open controls live in the separate Diagnostics tab.
-
-## Current StreamSignal Support
-
-- Starts StreamSignal with `--service`.
-- Opens StreamSignal with `--show` when the full UI is needed.
-- Stops StreamSignal processes that LivePanel started when LivePanel closes.
-- Shows StreamSignal mode, active profile, destination group, enabled destination count, platform summary, stream metadata, image summary, template summary, and recent workflow activity.
-- Lists available StreamSignal profiles.
-- Changes the active StreamSignal profile.
-- Runs StreamSignal's `Go Live` announcement workflow.
-- Runs StreamSignal's `End Stream` workflow.
-- Provides a diagnostics view for troubleshooting the local StreamSignal connection.
-
-LivePanel does not store StreamSignal credentials, profiles, or stream destination settings. Those stay in StreamSignal.
-
-## Current TideReader Support
-
-- Starts TideReader with `--service`.
-- Opens TideReader with `--show` when the full UI is needed.
-- Lists available TideReader overlay profiles.
-- Changes the active TideReader overlay profile.
-- Shows TideReader drawer metadata from SIP status, including layout, album art visibility, status pill visibility, background mode, and overlay URL.
-- Shows a native preview of TideReader's current overlay using TideReader's local now-playing and overlay settings JSON.
-- Provides a compact overlay URL tooltip. Clicking the tooltip button copies the overlay URL to the clipboard.
-
-LivePanel only reads TideReader's local overlay JSON and cover art from loopback HTTP URLs. Remote overlay and artwork URLs are rejected.
-
-## Current TuberSwitch Support
-
-- Starts TuberSwitch with `--service`.
-- Opens TuberSwitch with `--show` when the full UI is needed.
-- Lists available TuberSwitch profiles.
-- Changes the active TuberSwitch profile.
-- Shows the active TuberSwitch profile and mode in the current stream setup.
-- Provides diagnostics for the local TuberSwitch SIP connection.
-
-LivePanel does not store TuberSwitch account, OBS, redeem, avatar, or detection settings. Those stay in TuberSwitch.
+LivePanel does not store StreamSignal credentials, TideReader overlay/profile data, TuberSwitch account or avatar settings, profile storage, or destination secrets. Those stay in the owning apps.
 
 ## Local Connections
 
