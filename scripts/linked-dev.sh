@@ -97,6 +97,14 @@ sync_app() {
     mkdir -p "$dest/build/bin"
     rsync -rt --delete --no-perms --no-owner --no-group "$source/build/bin/" "$dest/build/bin/"
   fi
+  if [[ -f "$source/build/appicon.png" ]]; then
+    mkdir -p "$dest/build"
+    cp -a "$source/build/appicon.png" "$dest/build/appicon.png"
+  fi
+  if [[ -f "$source/build/windows/icon.ico" ]]; then
+    mkdir -p "$dest/build/windows"
+    cp -a "$source/build/windows/icon.ico" "$dest/build/windows/icon.ico"
+  fi
 }
 
 mirror_has_output() {

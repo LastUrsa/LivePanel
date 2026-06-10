@@ -4,7 +4,6 @@ import {
   Copy,
   Eye,
   ExternalLink,
-  Gauge,
   Globe2,
   Info,
   LayoutDashboard,
@@ -55,6 +54,7 @@ import {
   type TideReaderOverlaySnapshot,
 } from './lib/api/livepanel';
 import './App.css';
+import livePanelIcon from './assets/images/LivePanelIcon.png';
 import streamSignalIcon from './assets/images/StreamSignalIcon.png';
 import tideReaderIcon from './assets/images/TideReaderIcon.png';
 import tuberSwitchIcon from './assets/images/TuberSwitchIcon.png';
@@ -1759,7 +1759,7 @@ export default function App() {
     <div className="app-shell">
       <aside className="sidebar" aria-label="LivePanel navigation">
         <div className="brand-lockup">
-          <Gauge aria-hidden="true" />
+          <img className="app-logo" src={livePanelIcon} alt="" aria-hidden="true" />
           <div>
             <strong>LivePanel</strong>
             <span>Starsong Tools</span>
