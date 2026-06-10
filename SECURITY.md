@@ -18,6 +18,12 @@ LivePanel does not expose a public network service.
 
 LivePanel does not own StreamSignal credentials, TideReader overlay/profile data, TuberSwitch account or avatar settings, profile storage, or destination secrets. Those remain in the owning Starsong tools and their Windows data stores. Avoid copying production credential stores into test fixtures or repository files.
 
+## Linked Dev Builds
+
+The linked dev scripts mirror local source checkouts into `C:\Temp\StarsongLinkedDev` so Windows build tools can avoid WSL UNC path issues. The mirror is for source and build artifacts only. The sync excludes `.git`, local agent metadata, dependency folders, generated output, logs, common environment files, database files, and common key/certificate file formats.
+
+Do not place production credential stores or account tokens in the repository tree. If a linked dev mirror is no longer needed, it can be deleted from `C:\Temp\StarsongLinkedDev`.
+
 ## Configuration Safety
 
 `LIVEPANEL_STREAMSIGNAL_EXECUTABLE`, `LIVEPANEL_TIDEREADER_EXECUTABLE`, and `LIVEPANEL_TUBERSWITCH_EXECUTABLE` should point only to trusted local Starsong tool executables.

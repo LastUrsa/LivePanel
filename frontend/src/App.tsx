@@ -304,6 +304,38 @@ function tuberSwitchModeLabel(value: string) {
   return value ? formatStatusState(value) : 'Unavailable';
 }
 
+function tuberSwitchRedeemLabel(status: Record<string, unknown>) {
+  const enabled = booleanValue(status, 'redeemsEnabled', false);
+  const manageableCount = numberValue(status, 'manageableRedeemCount', numberValue(status, 'redeemCount', 0));
+  const unmanageableCount = numberValue(status, 'unmanageableRedeemCount', 0);
+  if (enabled) {
+    return manageableCount > 0 ? `Enabled (${manageableCount} manageable ${manageableCount === 1 ? 'redeem' : 'redeems'})` : 'Enabled';
+  }
+  if (manageableCount > 0) {
+    return `Configured (${manageableCount} manageable), disabled`;
+  }
+  if (unmanageableCount > 0) {
+    return `${unmanageableCount} unmanageable ${unmanageableCount === 1 ? 'redeem' : 'redeems'}`;
+  }
+  return 'Not configured';
+}
+
+function tuberSwitchDetectionLabel(status: Record<string, unknown>) {
+  const detectionStatus = statusValue(status, 'appDetectionStatus');
+  if (!booleanValue(status, 'appDetectionEnabled', false)) {
+    return detectionStatus && detectionStatus !== 'Disabled' ? `Disabled (${detectionStatus})` : 'Disabled';
+  }
+  return detectionStatus || 'Enabled';
+}
+
+function tuberSwitchOBSLabel(status: Record<string, unknown>) {
+  const summary = statusValue(status, 'obsSummary');
+  if (summary) {
+    return summary;
+  }
+  return booleanValue(status, 'obsConnected', false) ? 'Connected' : 'Not connected';
+}
+
 function formatRun(value: string) {
   if (!value) {
     return 'Never';
@@ -799,14 +831,15 @@ function TideReaderPreview({ workflow, overlaySnapshot, onOpen }: { workflow: Ti
 }
 
 function TuberSwitchPreview({ module, workflow, onOpen }: { module: ModuleInfo | null; workflow: TideReaderWorkflow; onOpen: (id: string) => void }) {
-  const activeMode = tuberSwitchModeLabel(statusValue(module?.status ?? {}, 'activeMode'));
+  const status = module?.status ?? {};
+  const activeMode = statusValue(status, 'currentModeLabel') || tuberSwitchModeLabel(statusValue(status, 'activeMode'));
   return (
     <div className="drawer-content">
       <PreviewField label="Profile" value={workflow.currentProfile.name || workflow.selectedProfile || 'No profile selected'} />
       <PreviewField label="Mode" value={activeMode} />
-      <PreviewField label="OBS configuration" value={statusValue(module?.status ?? {}, 'obsSummary') || 'Managed in TuberSwitch'} />
-      <PreviewField label="Redeems" value={statusValue(module?.status ?? {}, 'redeemsEnabled') || 'Managed in TuberSwitch'} />
-      <PreviewField label="Detection" value={statusValue(module?.status ?? {}, 'appDetectionStatus') || 'Managed in TuberSwitch'} />
+      <PreviewField label="OBS configuration" value={tuberSwitchOBSLabel(status)} />
+      <PreviewField label="Redeems" value={tuberSwitchRedeemLabel(status)} />
+      <PreviewField label="Detection" value={tuberSwitchDetectionLabel(status)} />
       <PreviewField label="Runtime" value={modeLabel(module?.mode || '')} />
       <button type="button" onClick={() => onOpen('tuberswitch')}>
         <ExternalLink aria-hidden="true" />

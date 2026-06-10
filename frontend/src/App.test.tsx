@@ -95,6 +95,17 @@ function tuberSwitchModuleFixture(overrides: Partial<ModuleInfo> = {}): ModuleIn
       activeProfile: 'Gaming Stream',
       activeProfileId: 'gaming',
       activeMode: '3d',
+      obsSummary: 'Connected: Gaming / VTuber',
+      obsConnected: true,
+      activeScene: 'Gaming',
+      activeSource: 'VTuber',
+      redeemsEnabled: true,
+      redeemCount: 5,
+      manageableRedeemCount: 2,
+      unmanageableRedeemCount: 3,
+      appDetectionStatus: '3D app detected',
+      appDetectionEnabled: true,
+      currentModeLabel: '3D VTuber Mode',
     },
     endpoint: 'http://127.0.0.1:47040',
     ...overrides,
@@ -431,7 +442,10 @@ describe('Dashboard', () => {
     await user.click(screen.getByRole('button', { name: 'View TuberSwitch profile details' }));
     expect(screen.getByRole('complementary', { name: /Gaming Stream \(3D\)/ })).toBeInTheDocument();
     expect(screen.getByText('Mode')).toBeInTheDocument();
-    expect(screen.getByText('3D')).toBeInTheDocument();
+    expect(screen.getByText('3D VTuber Mode')).toBeInTheDocument();
+    expect(screen.getByText('Connected: Gaming / VTuber')).toBeInTheDocument();
+    expect(screen.getByText('Enabled (2 manageable redeems)')).toBeInTheDocument();
+    expect(screen.getByText('3D app detected')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Open in TuberSwitch/i }));
 
     expect(tuberSwitchWorkflow.onSelectProfile).toHaveBeenCalledWith('Just Chatting');

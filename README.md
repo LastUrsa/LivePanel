@@ -204,3 +204,53 @@ $env:LIVEPANEL_TIDEREADER_EXECUTABLE = "C:\path\to\TideReader.Desktop.exe"
 $env:LIVEPANEL_TUBERSWITCH_EXECUTABLE = "C:\path\to\TuberSwitch.exe"
 .\build\bin\LivePanel.exe
 ```
+
+### Linked Windows Test Build From WSL
+
+Use the linked-dev scripts when testing LivePanel against local StreamSignal,
+TideReader, and TuberSwitch builds. The wrapper syncs WSL checkouts into a
+Windows-local mirror, builds selected apps from native `C:\...` paths, stages
+runtime binaries, launches LivePanel with the right environment variables, and
+checks SIP health.
+
+Build changed apps and launch:
+
+```bash
+./scripts/linked-dev.sh -Build livepanel,tuberswitch -Launch
+```
+
+Launch from already staged builds:
+
+```bash
+./scripts/linked-dev.sh -Build none -Launch
+```
+
+Build all apps and launch:
+
+```bash
+./scripts/linked-dev.sh -Build all -Launch
+```
+
+The default mirror and runtime staging root is:
+
+```text
+C:\Temp\StarsongLinkedDev
+```
+
+The PowerShell orchestrator is `scripts\linked-dev.ps1`; the WSL wrapper is
+`scripts/linked-dev.sh`.
+
+TideReader service mode uses backend port `127.0.0.1:17656` plus SIP discovery
+ports `47030-47039`. If LivePanel shows TideReader as not loaded, check for a
+stale process or port conflict before relaunching:
+
+```cmd
+netstat -ano | findstr :17656
+taskkill /IM TideReader.Desktop.exe /F
+```
+
+TideReader early startup diagnostics are written to:
+
+```text
+%APPDATA%\TideReader\logs\startup.log
+```
