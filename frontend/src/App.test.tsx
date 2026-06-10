@@ -73,6 +73,24 @@ function tideReaderModuleFixture(overrides: Partial<ModuleInfo> = {}): ModuleInf
       healthy: true,
       activeProfile: 'Listening Party',
       activeProfileId: 'listening-party',
+      overlayUrl: 'http://127.0.0.1:17660/overlay',
+      overlayEnabled: true,
+      overlayPort: 17660,
+      layout: 'Right',
+      albumArtVisible: false,
+      imageSizePx: 0,
+      statusPillVisible: false,
+      backgroundMode: 'gradient',
+      textAlign: 'Center',
+      profileCount: 2,
+      nowPlaying: {
+        status: 'playing',
+        title: 'Signal Bloom',
+        artist: 'Starsong',
+        album: 'Local Skies',
+        hasArtwork: true,
+        provider: 'tidal',
+      },
     },
     endpoint: 'http://127.0.0.1:47030',
     ...overrides,
@@ -411,6 +429,10 @@ describe('Dashboard', () => {
     await user.click(screen.getByRole('button', { name: 'View TideReader profile details' }));
     expect(screen.getByRole('complementary', { name: 'Listening Party' })).toBeInTheDocument();
     expect(screen.getByLabelText('TideReader overlay preview')).toHaveTextContent('Paradigm');
+    expect(screen.getByText('Right')).toBeInTheDocument();
+    expect(screen.getAllByText('Hidden')).toHaveLength(2);
+    expect(screen.getByText('Gradient')).toBeInTheDocument();
+    expect(screen.getByText('http://127.0.0.1:17660/overlay')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Open in TideReader/i }));
 
     expect(tideReaderWorkflow.onSelectProfile).toHaveBeenCalledWith('Gaming Overlay');

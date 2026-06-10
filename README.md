@@ -36,6 +36,7 @@ LivePanel does not store StreamSignal credentials, profiles, or stream destinati
 - Opens TideReader with `--show` when the full UI is needed.
 - Lists available TideReader overlay profiles.
 - Changes the active TideReader overlay profile.
+- Shows TideReader drawer metadata from SIP status, including layout, album art visibility, status pill visibility, background mode, and overlay URL.
 - Shows a native preview of TideReader's current overlay using TideReader's local now-playing and overlay settings JSON.
 - Provides a compact overlay URL tooltip. Clicking the tooltip button copies the overlay URL to the clipboard.
 

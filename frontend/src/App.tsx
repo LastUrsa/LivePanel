@@ -336,6 +336,28 @@ function tuberSwitchOBSLabel(status: Record<string, unknown>) {
   return booleanValue(status, 'obsConnected', false) ? 'Connected' : 'Not connected';
 }
 
+function tideReaderLayoutLabel(status: Record<string, unknown>, settings: Record<string, unknown>) {
+  return statusValue(status, 'layout') || textValue(settings, 'layout', textValue(settings, 'imagePosition', 'Current overlay'));
+}
+
+function tideReaderAlbumArtLabel(status: Record<string, unknown>, settings: Record<string, unknown>) {
+  if (typeof status?.albumArtVisible === 'boolean') {
+    return status.albumArtVisible ? 'Visible' : 'Hidden';
+  }
+  return numberValue(settings, 'imageSizePx', 0) > 0 ? 'Visible' : 'Hidden';
+}
+
+function tideReaderStatusPillLabel(status: Record<string, unknown>, settings: Record<string, unknown>) {
+  if (typeof status?.statusPillVisible === 'boolean') {
+    return status.statusPillVisible ? 'Visible' : 'Hidden';
+  }
+  return booleanValue(settings, 'showPlaybackState', true) ? 'Visible' : 'Hidden';
+}
+
+function tideReaderBackgroundLabel(status: Record<string, unknown>, container: Record<string, unknown>) {
+  return formatStatusState(statusValue(status, 'backgroundMode') || textValue(container, 'backgroundMode', 'Solid'));
+}
+
 function formatRun(value: string) {
   if (!value) {
     return 'Never';
@@ -761,7 +783,7 @@ function ProfileDetailDrawer({
           </div>
         </div>
         {target === 'streamsignal' ? <StreamSignalPreview module={streamSignalModule(modules)} workflow={workflow} onOpen={onOpen} /> : null}
-        {target === 'tidereader' ? <TideReaderPreview workflow={tideReaderWorkflow} overlaySnapshot={tideReaderOverlay} onOpen={onOpen} /> : null}
+        {target === 'tidereader' ? <TideReaderPreview module={tideReaderModule(modules)} workflow={tideReaderWorkflow} overlaySnapshot={tideReaderOverlay} onOpen={onOpen} /> : null}
         {target === 'tuberswitch' ? <TuberSwitchPreview module={tuberSwitchModule(modules)} workflow={tuberSwitchWorkflow} onOpen={onOpen} /> : null}
       </aside>
     </div>
@@ -808,7 +830,8 @@ function StreamSignalPreview({ module, workflow, onOpen }: { module: ModuleInfo 
   );
 }
 
-function TideReaderPreview({ workflow, overlaySnapshot, onOpen }: { workflow: TideReaderWorkflow; overlaySnapshot: TideReaderOverlaySnapshot; onOpen: (id: string) => void }) {
+function TideReaderPreview({ module, workflow, overlaySnapshot, onOpen }: { module: ModuleInfo | null; workflow: TideReaderWorkflow; overlaySnapshot: TideReaderOverlaySnapshot; onOpen: (id: string) => void }) {
+  const status = module?.status ?? {};
   const settings = overlaySnapshot.settings ?? {};
   const container = recordValue(settings, 'overlayContainerStyle');
   return (
@@ -817,11 +840,11 @@ function TideReaderPreview({ workflow, overlaySnapshot, onOpen }: { workflow: Ti
         <TideReaderOverlayPreview snapshot={overlaySnapshot} />
       </div>
       <PreviewField label="Profile" value={workflow.currentProfile.name || workflow.selectedProfile || 'No profile selected'} />
-      <PreviewField label="Layout" value={textValue(settings, 'layout', textValue(settings, 'imagePosition', 'Current overlay'))} />
-      <PreviewField label="Album art" value={numberValue(settings, 'imageSizePx', 0) > 0 ? 'Visible' : 'Hidden'} />
-      <PreviewField label="Status pill" value={booleanValue(settings, 'showPlaybackState', true) ? 'Visible' : 'Hidden'} />
-      <PreviewField label="Background" value={formatStatusState(textValue(container, 'backgroundMode', 'Solid'))} />
-      <PreviewField label="Overlay URL" value={overlaySnapshot.overlayUrl || 'Managed in TideReader'} />
+      <PreviewField label="Layout" value={tideReaderLayoutLabel(status, settings)} />
+      <PreviewField label="Album art" value={tideReaderAlbumArtLabel(status, settings)} />
+      <PreviewField label="Status pill" value={tideReaderStatusPillLabel(status, settings)} />
+      <PreviewField label="Background" value={tideReaderBackgroundLabel(status, container)} />
+      <PreviewField label="Overlay URL" value={statusValue(status, 'overlayUrl') || overlaySnapshot.overlayUrl || 'Managed in TideReader'} />
       <button type="button" onClick={() => onOpen('tidereader')}>
         <ExternalLink aria-hidden="true" />
         Open in TideReader
