@@ -6,6 +6,16 @@ The long-term intent is for LivePanel to provide a single place to see status, l
 
 Today, LivePanel can start StreamSignal, TideReader, and TuberSwitch in service mode, show module status, switch active profiles, send StreamSignal announcements, run the StreamSignal end-stream workflow, and preview the active TideReader overlay without opening the full tool interfaces.
 
+## App Requirements
+
+LivePanel requires SIP and service-mode compliant versions of the dependent Starsong apps. Earlier versions are not expected to appear in LivePanel Diagnostics.
+
+| App | Minimum Version |
+| --- | --- |
+| StreamSignal | v0.4.0 |
+| TideReader | v0.5.0 |
+| TuberSwitch | v0.6.0 |
+
 ## Dashboard
 
 LivePanel's Dashboard is a compact stream control surface:
