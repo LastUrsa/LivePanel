@@ -123,10 +123,16 @@
   border-bottom: 1px solid rgba(146, 148, 152, 0.12);
 }
 
-.brand-lockup svg {
-  width: 28px;
-  height: 28px;
-  color: var(--color-highlight);
+.app-logo {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #d7e0ea;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
 }
 
 .brand-lockup div {

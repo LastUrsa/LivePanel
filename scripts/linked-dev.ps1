@@ -71,6 +71,17 @@ function Invoke-RobocopyMirror([string]$Source, [string]$Destination) {
     if ($LASTEXITCODE -gt 7) {
         throw "robocopy failed with exit code $LASTEXITCODE while syncing $Source"
     }
+
+    $iconFiles = @(
+        @{ Source = Join-Path $Source "build\appicon.png"; Destination = Join-Path $Destination "build\appicon.png" },
+        @{ Source = Join-Path $Source "build\windows\icon.ico"; Destination = Join-Path $Destination "build\windows\icon.ico" }
+    )
+    foreach ($iconFile in $iconFiles) {
+        if (Test-Path $iconFile.Source) {
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $iconFile.Destination) | Out-Null
+            Copy-Item -LiteralPath $iconFile.Source -Destination $iconFile.Destination -Force
+        }
+    }
 }
 
 function Invoke-CommandChecked([string]$FilePath, [string[]]$Arguments, [string]$WorkingDirectory) {
