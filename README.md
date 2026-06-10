@@ -204,6 +204,26 @@ The executable is written to:
 build/bin/LivePanel.exe
 ```
 
+## Release Process
+
+LivePanel releases are published by the GitHub Actions Release workflow. The workflow runs frontend tests, frontend build, Go tests, frontend dependency audit, `govulncheck`, Wails Windows installer packaging, release-note validation, artifact checks, and then publishes the GitHub Release when requested.
+
+Before publishing a release:
+
+1. Update `wails.json` and `frontend/package.json` version metadata.
+2. Add a matching `## vX.Y.Z` section to `RELEASE_NOTES.md`.
+3. Work through `RELEASE_READINESS_CHECKLIST.md`.
+4. Run the Release workflow manually with `publish_release` disabled and inspect the uploaded artifacts.
+5. Publish by pushing a `vX.Y.Z` tag or rerunning the Release workflow with `publish_release` enabled.
+
+Expected release artifacts:
+
+```text
+LivePanel-vX.Y.Z-windows-amd64-installer.exe
+LivePanel-vX.Y.Z-windows-amd64-portable.zip
+SHA256SUMS.txt
+```
+
 ## Useful Dev Launch
 
 Example Windows launch using StreamSignal's dev data store and explicit dev tool builds:
