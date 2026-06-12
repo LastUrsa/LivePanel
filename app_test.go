@@ -29,16 +29,15 @@ func TestConfiguredStreamSignalEndpointOverrideRejectsRemoteHosts(t *testing.T) 
 	}
 }
 
-func TestStreamSignalExecutableCandidatesPreferLocalBuild(t *testing.T) {
+func TestStreamSignalExecutableCandidatesPreferStandardInstall(t *testing.T) {
+	programFiles := t.TempDir()
+	t.Setenv("ProgramFiles", programFiles)
+
 	candidates := streamSignalExecutableCandidates()
 	if len(candidates) < 1 {
 		t.Fatal("expected executable candidates")
 	}
-	executable := "StreamSignal-dev"
-	if runtime.GOOS == "windows" {
-		executable = "StreamSignal.exe"
-	}
-	want := filepath.Clean(filepath.Join("..", "StreamSignal", "build", "bin", executable))
+	want := filepath.Join(programFiles, "Starsong Tools", "StreamSignal", "StreamSignal.exe")
 	if candidates[0] != want {
 		t.Fatalf("expected first candidate %q, got %q", want, candidates[0])
 	}
@@ -62,16 +61,15 @@ func TestConfiguredTideReaderEndpointOverrideRejectsRemoteHosts(t *testing.T) {
 	}
 }
 
-func TestTideReaderExecutableCandidatesPreferLocalBuild(t *testing.T) {
+func TestTideReaderExecutableCandidatesPreferStandardInstall(t *testing.T) {
+	programFiles := t.TempDir()
+	t.Setenv("ProgramFiles", programFiles)
+
 	candidates := tideReaderExecutableCandidates()
 	if len(candidates) < 1 {
 		t.Fatal("expected executable candidates")
 	}
-	executable := "TideReader.Desktop"
-	if runtime.GOOS == "windows" {
-		executable = "TideReader.Desktop.exe"
-	}
-	want := filepath.Clean(filepath.Join("..", "TideReader", "build", "bin", executable))
+	want := filepath.Join(programFiles, "Starsong Tools", "TideReader", "TideReader.Desktop.exe")
 	if candidates[0] != want {
 		t.Fatalf("expected first candidate %q, got %q", want, candidates[0])
 	}
@@ -95,18 +93,46 @@ func TestConfiguredTuberSwitchEndpointOverrideRejectsRemoteHosts(t *testing.T) {
 	}
 }
 
-func TestTuberSwitchExecutableCandidatesPreferLocalBuild(t *testing.T) {
+func TestTuberSwitchExecutableCandidatesPreferStandardInstall(t *testing.T) {
+	programFiles := t.TempDir()
+	t.Setenv("ProgramFiles", programFiles)
+
 	candidates := tuberSwitchExecutableCandidates()
 	if len(candidates) < 1 {
 		t.Fatal("expected executable candidates")
 	}
-	executable := "TuberSwitch-dev"
-	if runtime.GOOS == "windows" {
-		executable = "TuberSwitch.exe"
-	}
-	want := filepath.Clean(filepath.Join("..", "TuberSwitch", "build", "bin", executable))
+	want := filepath.Join(programFiles, "Starsong Tools", "TuberSwitch", "TuberSwitch.exe")
 	if candidates[0] != want {
 		t.Fatalf("expected first candidate %q, got %q", want, candidates[0])
+	}
+}
+
+func TestExecutableForDefinitionUsesStandardInstallBeforeDevBuilds(t *testing.T) {
+	programFiles := t.TempDir()
+	t.Setenv("ProgramFiles", programFiles)
+	t.Chdir(t.TempDir())
+
+	standardPath := filepath.Join(programFiles, "Starsong Tools", "StreamSignal", "StreamSignal.exe")
+	localPath := filepath.Clean(filepath.Join("..", "StreamSignal", "build", "bin", "StreamSignal-dev"))
+	if runtime.GOOS == "windows" {
+		localPath = filepath.Clean(filepath.Join("..", "StreamSignal", "build", "bin", "StreamSignal.exe"))
+	}
+	if err := os.MkdirAll(filepath.Dir(standardPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(standardPath, []byte("stub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(localPath, []byte("stub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	definition, _ := moduleDefinitionByID("streamsignal")
+	if got := executableForDefinition(definition, ModuleConfig{}); got != standardPath {
+		t.Fatalf("expected standard install path %q, got %q", standardPath, got)
 	}
 }
 

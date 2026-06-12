@@ -465,16 +465,32 @@ func executableForDefinition(definition moduleDefinition, config ModuleConfig) s
 }
 
 func streamSignalExecutableCandidates() []string {
-	candidates := localStreamSignalBuildCandidates()
+	candidates := standardInstallCandidates("StreamSignal", "StreamSignal.exe")
+	candidates = append(candidates, localStreamSignalBuildCandidates()...)
+	candidates = append(candidates, legacyInstallCandidates("StreamSignal", "StreamSignal.exe")...)
+	return candidates
+}
+
+func standardInstallCandidates(appName string, executableName string) []string {
+	base := strings.TrimSpace(os.Getenv("ProgramFiles"))
+	if base == "" {
+		return nil
+	}
+	return []string{filepath.Join(base, "Starsong Tools", appName, executableName)}
+}
+
+func legacyInstallCandidates(appName string, executableName string) []string {
+	var candidates []string
 	for _, base := range []string{os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)"), os.Getenv("LocalAppData")} {
 		base = strings.TrimSpace(base)
 		if base == "" {
 			continue
 		}
 		candidates = append(candidates,
-			filepath.Join(base, "DRDohr", "StreamSignal", "StreamSignal.exe"),
-			filepath.Join(base, "StreamSignal", "StreamSignal.exe"),
-			filepath.Join(base, "Programs", "StreamSignal", "StreamSignal.exe"),
+			filepath.Join(base, "DRDohr", appName, executableName),
+			filepath.Join(base, "LastUrsa", appName, executableName),
+			filepath.Join(base, appName, executableName),
+			filepath.Join(base, "Programs", appName, executableName),
 		)
 	}
 	return candidates
@@ -510,6 +526,14 @@ func configuredTideReaderExecutable() string {
 }
 
 func tideReaderExecutableCandidates() []string {
+	candidates := standardInstallCandidates("TideReader", "TideReader.Desktop.exe")
+	candidates = append(candidates, localTideReaderBuildCandidates()...)
+	candidates = append(candidates, legacyInstallCandidates("TideReader", "TideReader.Desktop.exe")...)
+	candidates = append(candidates, legacyInstallCandidates("TideReader", "TideReader.exe")...)
+	return candidates
+}
+
+func localTideReaderBuildCandidates() []string {
 	names := []string{"TideReader.Desktop.exe", "TideReader.exe", "TideReader.Desktop", "TideReader"}
 	if runtime.GOOS != "windows" {
 		names = []string{"TideReader.Desktop", "TideReader", "TideReader.Desktop.exe", "TideReader.exe"}
@@ -552,22 +576,11 @@ func tuberSwitchExecutableCandidates() []string {
 		names = []string{"TuberSwitch.exe"}
 	}
 
-	candidates := make([]string, 0, len(names)*4)
+	candidates := standardInstallCandidates("TuberSwitch", "TuberSwitch.exe")
 	for _, name := range names {
 		candidates = append(candidates,
 			filepath.Clean(filepath.Join("..", "TuberSwitch", "build", "bin", name)),
 			filepath.Clean(filepath.Join("..", "TuberSwitch", "dist", name)),
-		)
-	}
-	for _, base := range []string{os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)"), os.Getenv("LocalAppData")} {
-		base = strings.TrimSpace(base)
-		if base == "" {
-			continue
-		}
-		candidates = append(candidates,
-			filepath.Join(base, "DRDohr", "TuberSwitch", "TuberSwitch.exe"),
-			filepath.Join(base, "TuberSwitch", "TuberSwitch.exe"),
-			filepath.Join(base, "Programs", "TuberSwitch", "TuberSwitch.exe"),
 		)
 	}
 	if executable, err := os.Executable(); err == nil {
@@ -579,6 +592,7 @@ func tuberSwitchExecutableCandidates() []string {
 			)
 		}
 	}
+	candidates = append(candidates, legacyInstallCandidates("TuberSwitch", "TuberSwitch.exe")...)
 	return candidates
 }
 

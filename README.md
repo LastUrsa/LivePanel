@@ -76,8 +76,18 @@ Executable path resolution order is:
 
 1. Environment variable override.
 2. Saved LivePanel module location.
-3. Auto-detected local/dev install path.
-4. Executable-name fallback.
+3. Standard Starsong Tools install path beneath `%ProgramFiles%\Starsong Tools`.
+4. Local development build path.
+5. Legacy install path.
+6. Executable-name fallback.
+
+Standard Windows install paths checked by auto-detection are:
+
+```text
+%ProgramFiles%\Starsong Tools\StreamSignal\StreamSignal.exe
+%ProgramFiles%\Starsong Tools\TideReader\TideReader.Desktop.exe
+%ProgramFiles%\Starsong Tools\TuberSwitch\TuberSwitch.exe
+```
 
 Optional environment variables:
 
