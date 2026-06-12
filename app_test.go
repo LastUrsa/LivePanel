@@ -31,7 +31,9 @@ func TestConfiguredStreamSignalEndpointOverrideRejectsRemoteHosts(t *testing.T) 
 
 func TestStreamSignalExecutableCandidatesPreferStandardInstall(t *testing.T) {
 	programFiles := t.TempDir()
+	t.Setenv("ProgramW6432", "")
 	t.Setenv("ProgramFiles", programFiles)
+	t.Setenv("SystemDrive", "")
 
 	candidates := streamSignalExecutableCandidates()
 	if len(candidates) < 1 {
@@ -63,7 +65,9 @@ func TestConfiguredTideReaderEndpointOverrideRejectsRemoteHosts(t *testing.T) {
 
 func TestTideReaderExecutableCandidatesPreferStandardInstall(t *testing.T) {
 	programFiles := t.TempDir()
+	t.Setenv("ProgramW6432", "")
 	t.Setenv("ProgramFiles", programFiles)
+	t.Setenv("SystemDrive", "")
 
 	candidates := tideReaderExecutableCandidates()
 	if len(candidates) < 1 {
@@ -72,6 +76,40 @@ func TestTideReaderExecutableCandidatesPreferStandardInstall(t *testing.T) {
 	want := filepath.Join(programFiles, "Starsong Tools", "TideReader", "TideReader.Desktop.exe")
 	if candidates[0] != want {
 		t.Fatalf("expected first candidate %q, got %q", want, candidates[0])
+	}
+}
+
+func TestTideReaderExecutableCandidatesIncludeFutureStandardExecutable(t *testing.T) {
+	programFiles := t.TempDir()
+	t.Setenv("ProgramW6432", "")
+	t.Setenv("ProgramFiles", programFiles)
+	t.Setenv("SystemDrive", "")
+
+	candidates := tideReaderExecutableCandidates()
+	want := filepath.Join(programFiles, "Starsong Tools", "TideReader", "TideReader.exe")
+	if len(candidates) < 2 || candidates[1] != want {
+		t.Fatalf("expected future TideReader executable candidate %q second, got %+v", want, candidates)
+	}
+}
+
+func TestExecutableForDefinitionFindsFutureTideReaderStandardExecutable(t *testing.T) {
+	programFiles := t.TempDir()
+	t.Setenv("ProgramW6432", "")
+	t.Setenv("ProgramFiles", programFiles)
+	t.Setenv("SystemDrive", "")
+	t.Chdir(t.TempDir())
+
+	futurePath := filepath.Join(programFiles, "Starsong Tools", "TideReader", "TideReader.exe")
+	if err := os.MkdirAll(filepath.Dir(futurePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(futurePath, []byte("stub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	definition, _ := moduleDefinitionByID("tidereader")
+	if got := executableForDefinition(definition, ModuleConfig{}); got != futurePath {
+		t.Fatalf("expected future TideReader standard executable %q, got %q", futurePath, got)
 	}
 }
 
@@ -95,7 +133,9 @@ func TestConfiguredTuberSwitchEndpointOverrideRejectsRemoteHosts(t *testing.T) {
 
 func TestTuberSwitchExecutableCandidatesPreferStandardInstall(t *testing.T) {
 	programFiles := t.TempDir()
+	t.Setenv("ProgramW6432", "")
 	t.Setenv("ProgramFiles", programFiles)
+	t.Setenv("SystemDrive", "")
 
 	candidates := tuberSwitchExecutableCandidates()
 	if len(candidates) < 1 {
@@ -107,9 +147,37 @@ func TestTuberSwitchExecutableCandidatesPreferStandardInstall(t *testing.T) {
 	}
 }
 
+func TestStandardInstallCandidatesPreferNativeProgramFiles(t *testing.T) {
+	programW6432 := filepath.Join(t.TempDir(), "Program Files")
+	programFilesX86 := filepath.Join(t.TempDir(), "Program Files (x86)")
+	t.Setenv("ProgramW6432", programW6432)
+	t.Setenv("ProgramFiles", programFilesX86)
+	t.Setenv("SystemDrive", "")
+
+	candidates := standardInstallCandidates("TideReader", "TideReader.Desktop.exe")
+	want := filepath.Join(programW6432, "Starsong Tools", "TideReader", "TideReader.Desktop.exe")
+	if len(candidates) < 1 || candidates[0] != want {
+		t.Fatalf("expected native Program Files candidate %q first, got %+v", want, candidates)
+	}
+}
+
+func TestStandardInstallCandidatesUseSystemDriveFallback(t *testing.T) {
+	t.Setenv("ProgramW6432", "")
+	t.Setenv("ProgramFiles", "")
+	t.Setenv("SystemDrive", "C:")
+
+	candidates := standardInstallCandidates("TideReader", "TideReader.Desktop.exe")
+	want := filepath.Join("C:"+string(filepath.Separator), "Program Files", "Starsong Tools", "TideReader", "TideReader.Desktop.exe")
+	if len(candidates) != 1 || candidates[0] != want {
+		t.Fatalf("expected SystemDrive Program Files candidate %q, got %+v", want, candidates)
+	}
+}
+
 func TestExecutableForDefinitionUsesStandardInstallBeforeDevBuilds(t *testing.T) {
 	programFiles := t.TempDir()
+	t.Setenv("ProgramW6432", "")
 	t.Setenv("ProgramFiles", programFiles)
+	t.Setenv("SystemDrive", "")
 	t.Chdir(t.TempDir())
 
 	standardPath := filepath.Join(programFiles, "Starsong Tools", "StreamSignal", "StreamSignal.exe")
