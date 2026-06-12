@@ -472,16 +472,17 @@ func streamSignalExecutableCandidates() []string {
 }
 
 func standardInstallCandidates(appName string, executableName string) []string {
-	base := strings.TrimSpace(os.Getenv("ProgramFiles"))
-	if base == "" {
-		return nil
+	roots := programFilesRoots()
+	candidates := make([]string, 0, len(roots))
+	for _, base := range roots {
+		candidates = append(candidates, filepath.Join(base, "Starsong Tools", appName, executableName))
 	}
-	return []string{filepath.Join(base, "Starsong Tools", appName, executableName)}
+	return candidates
 }
 
 func legacyInstallCandidates(appName string, executableName string) []string {
 	var candidates []string
-	for _, base := range []string{os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)"), os.Getenv("LocalAppData")} {
+	for _, base := range append(programFilesRoots(), os.Getenv("ProgramFiles(x86)"), os.Getenv("LocalAppData"), os.Getenv("LOCALAPPDATA")) {
 		base = strings.TrimSpace(base)
 		if base == "" {
 			continue
@@ -494,6 +495,36 @@ func legacyInstallCandidates(appName string, executableName string) []string {
 		)
 	}
 	return candidates
+}
+
+func programFilesRoots() []string {
+	var roots []string
+	for _, base := range []string{os.Getenv("ProgramW6432"), os.Getenv("ProgramFiles"), systemDriveProgramFilesRoot()} {
+		base = strings.TrimSpace(base)
+		if base == "" {
+			continue
+		}
+		roots = appendUniquePath(roots, base)
+	}
+	return roots
+}
+
+func systemDriveProgramFilesRoot() string {
+	drive := strings.TrimSpace(os.Getenv("SystemDrive"))
+	if drive == "" {
+		return ""
+	}
+	return filepath.Join(drive+string(filepath.Separator), "Program Files")
+}
+
+func appendUniquePath(paths []string, candidate string) []string {
+	cleaned := filepath.Clean(candidate)
+	for _, existing := range paths {
+		if strings.EqualFold(filepath.Clean(existing), cleaned) {
+			return paths
+		}
+	}
+	return append(paths, cleaned)
 }
 
 func localStreamSignalBuildCandidates() []string {
@@ -526,10 +557,16 @@ func configuredTideReaderExecutable() string {
 }
 
 func tideReaderExecutableCandidates() []string {
-	candidates := standardInstallCandidates("TideReader", "TideReader.Desktop.exe")
+	candidates := tideReaderStandardInstallCandidates()
 	candidates = append(candidates, localTideReaderBuildCandidates()...)
 	candidates = append(candidates, legacyInstallCandidates("TideReader", "TideReader.Desktop.exe")...)
 	candidates = append(candidates, legacyInstallCandidates("TideReader", "TideReader.exe")...)
+	return candidates
+}
+
+func tideReaderStandardInstallCandidates() []string {
+	candidates := standardInstallCandidates("TideReader", "TideReader.Desktop.exe")
+	candidates = append(candidates, standardInstallCandidates("TideReader", "TideReader.exe")...)
 	return candidates
 }
 

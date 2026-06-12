@@ -86,6 +86,7 @@ Standard Windows install paths checked by auto-detection are:
 ```text
 %ProgramFiles%\Starsong Tools\StreamSignal\StreamSignal.exe
 %ProgramFiles%\Starsong Tools\TideReader\TideReader.Desktop.exe
+%ProgramFiles%\Starsong Tools\TideReader\TideReader.exe
 %ProgramFiles%\Starsong Tools\TuberSwitch\TuberSwitch.exe
 ```
 
@@ -95,7 +96,7 @@ Optional environment variables:
 | --- | --- |
 | `LIVEPANEL_STREAMSIGNAL_EXECUTABLE` | Explicit path to `StreamSignal.exe`. |
 | `LIVEPANEL_STREAMSIGNAL_ENDPOINT` | Explicit local StreamSignal SIP endpoint. |
-| `LIVEPANEL_TIDEREADER_EXECUTABLE` | Explicit path to `TideReader.Desktop.exe`. |
+| `LIVEPANEL_TIDEREADER_EXECUTABLE` | Explicit path to `TideReader.Desktop.exe` or `TideReader.exe`. |
 | `LIVEPANEL_TIDEREADER_ENDPOINT` | Explicit local TideReader SIP endpoint. |
 | `LIVEPANEL_TIDEREADER_OVERLAY_URL` | Explicit local TideReader overlay URL. |
 | `LIVEPANEL_TUBERSWITCH_EXECUTABLE` | Explicit path to `TuberSwitch.exe`. |
@@ -205,7 +206,7 @@ Example Windows launch using StreamSignal's dev data store and explicit dev tool
 ```powershell
 $env:STREAMSIGNAL_ENV = "dev"
 $env:LIVEPANEL_STREAMSIGNAL_EXECUTABLE = "C:\path\to\StreamSignal.exe"
-$env:LIVEPANEL_TIDEREADER_EXECUTABLE = "C:\path\to\TideReader.Desktop.exe"
+$env:LIVEPANEL_TIDEREADER_EXECUTABLE = "C:\path\to\TideReader.Desktop.exe" # or TideReader.exe
 $env:LIVEPANEL_TUBERSWITCH_EXECUTABLE = "C:\path\to\TuberSwitch.exe"
 .\build\bin\LivePanel.exe
 ```
