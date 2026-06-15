@@ -1,9 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, vi } from 'vitest';
 import App, { Dashboard, DiagnosticsPage, SettingsPage } from './App';
 import * as api from './lib/api/livepanel';
-import type { AnnounceStatus, CurrentProfile, EndStreamStatus, ModuleExecutableConfig, ModuleInfo } from './lib/api/livepanel';
+import type { AnnounceStatus, CurrentProfile, EndStreamStatus, ModuleExecutableConfig, ModuleInfo, Redeem } from './lib/api/livepanel';
 
 vi.mock('./lib/api/livepanel', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./lib/api/livepanel')>();
@@ -19,6 +19,7 @@ vi.mock('./lib/api/livepanel', async (importOriginal) => {
     getAutoStartManagedModules: vi.fn(),
     getModuleExecutableConfigs: vi.fn(),
     getStreamSignalAnnounceStatus: vi.fn(),
+    getStreamSignalAnnouncementFields: vi.fn(),
     getStreamSignalCurrentProfile: vi.fn(),
     getStreamSignalEndStreamStatus: vi.fn(),
     getStreamSignalProfiles: vi.fn(),
@@ -32,8 +33,11 @@ vi.mock('./lib/api/livepanel', async (importOriginal) => {
     pickModuleExecutablePath: vi.fn(),
     refreshModules: vi.fn(),
     setAutoStartManagedModules: vi.fn(),
+    setTideReaderBrowserSupport: vi.fn(),
+    setTuberSwitchRedeem: vi.fn(),
     setModuleExecutablePath: vi.fn(),
     startModule: vi.fn(),
+    updateStreamSignalAnnouncementFields: vi.fn(),
   };
 });
 
@@ -141,6 +145,8 @@ function actionFixture() {
 function workflowFixture(overrides: Partial<{
   profiles: string[];
   currentProfile: CurrentProfile;
+  announcementFields: api.AnnouncementField[];
+  announcementFieldDrafts: Record<string, string>;
   announceStatus: AnnounceStatus;
   endStreamStatus: EndStreamStatus;
   selectedProfile: string;
@@ -151,6 +157,8 @@ function workflowFixture(overrides: Partial<{
   return {
     profiles: ['Gaming Stream', 'Music Stream'],
     currentProfile: { id: 'gaming', name: 'Gaming Stream' },
+    announcementFields: [],
+    announcementFieldDrafts: {},
     announceStatus: { lastRun: '2026-06-05T12:00:00Z', success: true },
     endStreamStatus: { lastRun: '', success: false },
     selectedProfile: 'Gaming Stream',
@@ -158,6 +166,8 @@ function workflowFixture(overrides: Partial<{
     busy: false,
     pendingConfirmation: null,
     onSelectProfile: vi.fn(),
+    onChangeAnnouncementField: vi.fn(),
+    onResetAnnouncementFields: vi.fn(),
     onGoLive: vi.fn(),
     onConfirmGoLive: vi.fn(),
     onCancelConfirmation: vi.fn(),
@@ -170,14 +180,17 @@ function tideReaderWorkflowFixture(overrides: Partial<{
   profiles: string[];
   currentProfile: CurrentProfile;
   selectedProfile: string;
+  browserSupport: api.BrowserSupport;
   busy: boolean;
 }> = {}) {
   return {
     profiles: ['Listening Party', 'Gaming Overlay'],
     currentProfile: { id: 'listening-party', name: 'Listening Party' },
     selectedProfile: 'Listening Party',
+    browserSupport: { enabled: true },
     busy: false,
     onSelectProfile: vi.fn(),
+    onToggleBrowserSupport: vi.fn(),
     ...overrides,
   };
 }
@@ -186,6 +199,7 @@ function tuberSwitchWorkflowFixture(overrides: Partial<{
   profiles: string[];
   currentProfile: CurrentProfile;
   selectedProfile: string;
+  redeems: Redeem[];
   busy: boolean;
   error: string;
 }> = {}) {
@@ -193,8 +207,10 @@ function tuberSwitchWorkflowFixture(overrides: Partial<{
     profiles: ['Gaming Stream', 'Just Chatting'],
     currentProfile: { id: 'gaming', name: 'Gaming Stream' },
     selectedProfile: 'Gaming Stream',
+    redeems: [],
     busy: false,
     onSelectProfile: vi.fn(),
+    onToggleRedeem: vi.fn(),
     ...overrides,
   };
 }
@@ -331,7 +347,7 @@ describe('Dashboard', () => {
     expect(screen.getByRole('button', { name: /End Stream/i })).toBeDisabled();
   });
 
-  it('shows profile details only when the drawer is requested', async () => {
+  it('shows app details only when the drawer is requested', async () => {
     const user = userEvent.setup();
     const actions = actionFixture();
     render(
@@ -348,10 +364,11 @@ describe('Dashboard', () => {
 
     expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'View StreamSignal profile details' }));
+    await user.click(screen.getByRole('button', { name: 'View StreamSignal app details' }));
     expect(screen.getByText('Announcement Failed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Resize app details drawer' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Close profile details' }));
+    await user.click(screen.getByRole('button', { name: 'Close app details' }));
     expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
   });
 
@@ -383,15 +400,79 @@ describe('Dashboard', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'View StreamSignal profile details' }));
+    await user.click(screen.getByRole('button', { name: 'View StreamSignal app details' }));
 
-    expect(screen.getByText('Late Night Music')).toBeInTheDocument();
     expect(screen.getByText('2 enabled of 3 destinations')).toBeInTheDocument();
-    expect(screen.getByText('Main Announcements')).toBeInTheDocument();
     expect(screen.getByText('Bluesky, Discord')).toBeInTheDocument();
     expect(screen.getByText('Announcement image + Bluesky card thumbnail')).toBeInTheDocument();
     expect(screen.getByText('2 destination templates')).toBeInTheDocument();
     expect(screen.queryByText('Gaming Stream Template')).not.toBeInTheDocument();
+  });
+
+  it('orders StreamSignal announcement fields for manual announcement entry', async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <Dashboard
+        modules={[moduleFixture(), tideReaderModuleFixture(), tuberSwitchModuleFixture()]}
+        workflow={workflowFixture({
+          announcementFields: [
+            { id: 'message', name: 'Message', value: '' },
+            { id: 'hashtags', name: 'Hashtags', value: '#vtuber' },
+            { id: 'stream_url', name: 'Stream URL', value: 'https://example.com/live' },
+            { id: 'category', name: 'Category', value: 'Music' },
+            { id: 'stream_title', name: 'Stream Title', value: 'Late Night Music' },
+          ],
+          announcementFieldDrafts: {
+            message: '',
+            hashtags: '#vtuber',
+            stream_url: 'https://example.com/live',
+            category: 'Music',
+            stream_title: 'Late Night Music',
+          },
+        })}
+        tideReaderWorkflow={tideReaderWorkflowFixture()}
+        tuberSwitchWorkflow={tuberSwitchWorkflowFixture()}
+        {...actionFixture()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'View StreamSignal app details' }));
+
+    const labels = Array.from(container.querySelectorAll('.announcement-field-row span')).map((label) => label.textContent);
+    expect(labels).toEqual(['Stream Title', 'Stream URL', 'Category/Game', 'Hashtags', 'Optional Message']);
+  });
+
+  it('uses announcement field values in the StreamSignal drawer summary', async () => {
+    const user = userEvent.setup();
+    render(
+      <Dashboard
+        modules={[moduleFixture({ status: { state: 'idle', message: 'Ready', destinationCount: 1 } }), tideReaderModuleFixture(), tuberSwitchModuleFixture()]}
+        workflow={workflowFixture({
+          announcementFields: [
+            { id: 'stream_title', name: 'Stream Title', value: 'Field Stream Title' },
+            { id: 'stream_url', name: 'Stream URL', value: 'https://example.com/field' },
+            { id: 'category', name: 'Category', value: 'Field Category' },
+            { id: 'hashtags', name: 'Hashtags', value: '#field' },
+          ],
+          announcementFieldDrafts: {
+            stream_title: 'Field Stream Title',
+            stream_url: 'https://example.com/field',
+            category: 'Field Category',
+            hashtags: '#field',
+          },
+        })}
+        tideReaderWorkflow={tideReaderWorkflowFixture()}
+        tuberSwitchWorkflow={tuberSwitchWorkflowFixture()}
+        {...actionFixture()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'View StreamSignal app details' }));
+
+    expect(screen.getByText('https://example.com/field')).toBeInTheDocument();
+    expect(screen.getByText('Field Category')).toBeInTheDocument();
+    expect(screen.getByText('#field')).toBeInTheDocument();
+    expect(screen.queryByText('Managed in StreamSignal')).not.toBeInTheDocument();
   });
 
   it('displays duplicate confirmation modal', () => {
@@ -465,8 +546,8 @@ describe('Dashboard', () => {
     expect(screen.getAllByDisplayValue('Listening Party').length).toBeGreaterThan(0);
 
     await user.selectOptions(screen.getAllByLabelText(/Profile/i)[1], 'Gaming Overlay');
-    await user.click(screen.getByRole('button', { name: 'View TideReader profile details' }));
-    expect(screen.getByRole('complementary', { name: 'Listening Party' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View TideReader app details' }));
+    expect(screen.getByRole('complementary', { name: 'TideReader' })).toBeInTheDocument();
     expect(screen.getByLabelText('TideReader overlay preview')).toHaveTextContent('Paradigm');
     expect(screen.getByText('Right')).toBeInTheDocument();
     expect(screen.getAllByText('Hidden')).toHaveLength(2);
@@ -478,10 +559,94 @@ describe('Dashboard', () => {
     expect(actions.onOpen).toHaveBeenCalledWith('tidereader');
   });
 
+  it('hides browser now-playing data in TideReader previews when browser support is disabled', async () => {
+    const user = userEvent.setup();
+    const browserSnapshot = tideReaderOverlayFixture({
+      nowPlaying: {
+        status: 'playing',
+        title: 'Browser Song',
+        artist: 'Browser Artist',
+        album: 'Browser Album',
+        provider: 'browser',
+        browser: 'chrome',
+      },
+      settings: {
+        ...tideReaderOverlayFixture().settings,
+        songTextStyle: { fontSizePx: 22, maxCharacters: 0, bold: true, colorHex: '#E6E6E6' },
+        artistTextStyle: { fontSizePx: 16, maxCharacters: 0, bold: true, colorHex: '#E6E6E6' },
+        albumTextStyle: { fontSizePx: 14, maxCharacters: 0, colorHex: '#BFBFBF' },
+      },
+    });
+
+    render(
+      <Dashboard
+        modules={[moduleFixture(), tideReaderModuleFixture({ capabilities: ['Profiles', 'Status Reporting', 'browser-support'], status: { ...tideReaderModuleFixture().status, source: 'browser', browserSupportEnabled: false } }), tuberSwitchModuleFixture()]}
+        workflow={workflowFixture()}
+        tideReaderWorkflow={tideReaderWorkflowFixture({ browserSupport: { enabled: false } })}
+        tuberSwitchWorkflow={tuberSwitchWorkflowFixture()}
+        tideReaderOverlay={browserSnapshot}
+        {...actionFixture()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'View TideReader app details' }));
+
+    expect(screen.queryByText('Browser Song')).not.toBeInTheDocument();
+    expect(screen.getByText('Nothing playing')).toBeInTheDocument();
+    expect(screen.getByText('Waiting for playback')).toBeInTheDocument();
+    expect(screen.queryByText('...')).not.toBeInTheDocument();
+    expect(screen.getByText('Current source')).toBeInTheDocument();
+    expect(screen.getByText('None')).toBeInTheDocument();
+  });
+
+  it('marks TideReader smart text modes in the drawer preview', async () => {
+    const user = userEvent.setup();
+    const smartSnapshot = tideReaderOverlayFixture({
+      nowPlaying: {
+        status: 'playing',
+        title: 'A Very Long Song Title That Should Use Smart Text',
+        artist: 'A Very Long Artist Name',
+        album: 'A Very Long Album Name',
+        provider: 'tidal',
+      },
+      settings: {
+        ...tideReaderOverlayFixture().settings,
+        songTextStyle: { fontSizePx: 22, maxCharacters: 0, bold: true, colorHex: '#E6E6E6', textOverflowMode: 'TwoLines' },
+        artistTextStyle: { fontSizePx: 16, maxCharacters: 0, bold: true, colorHex: '#E6E6E6', textOverflowMode: 'Scroll' },
+        albumTextStyle: { fontSizePx: 14, maxCharacters: 0, colorHex: '#BFBFBF', textOverflowMode: 'AutoSize' },
+      },
+    });
+
+    render(
+      <Dashboard
+        modules={[moduleFixture(), tideReaderModuleFixture(), tuberSwitchModuleFixture()]}
+        workflow={workflowFixture()}
+        tideReaderWorkflow={tideReaderWorkflowFixture()}
+        tuberSwitchWorkflow={tuberSwitchWorkflowFixture()}
+        tideReaderOverlay={smartSnapshot}
+        {...actionFixture()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'View TideReader app details' }));
+
+    const smartTextFor = (text: string) =>
+      screen.getAllByText(text).find((element) => !element.hasAttribute('aria-hidden'))?.closest('.tr-smart-text');
+    expect(smartTextFor('A Very Long Song Title That Should Use Smart Text')).toHaveAttribute('data-overflow-mode', 'TwoLines');
+    expect(smartTextFor('A Very Long Artist Name')).toHaveAttribute('data-overflow-mode', 'Scroll');
+    expect(smartTextFor('A Very Long Album Name')).toHaveAttribute('data-overflow-mode', 'AutoSize');
+  });
+
   it('displays and controls TuberSwitch profiles and active mode', async () => {
     const user = userEvent.setup();
     const actions = actionFixture();
-    const tuberSwitchWorkflow = tuberSwitchWorkflowFixture();
+    const tuberSwitchWorkflow = tuberSwitchWorkflowFixture({
+      redeems: [
+        { id: 'headpat', name: 'Headpats', available: true, enabled: true },
+        { id: 'instrument', name: 'Throw Instruments', available: true, enabled: false },
+        { id: 'readonly', name: 'Read-only Reward', available: false, enabled: false },
+      ],
+    });
 
     render(
       <Dashboard
@@ -500,12 +665,14 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Protocol Version')).not.toBeInTheDocument();
 
     await user.selectOptions(screen.getAllByLabelText(/Profile/i)[2], 'Just Chatting');
-    await user.click(screen.getByRole('button', { name: 'View TuberSwitch profile details' }));
-    expect(screen.getByRole('complementary', { name: /Gaming Stream \(3D\)/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View TuberSwitch app details' }));
+    expect(screen.getByRole('complementary', { name: 'TuberSwitch' })).toBeInTheDocument();
     expect(screen.getByText('Mode')).toBeInTheDocument();
     expect(screen.getByText('3D VTuber Mode')).toBeInTheDocument();
     expect(screen.getByText('Connected: Gaming / VTuber')).toBeInTheDocument();
-    expect(screen.getByText('Enabled (2 manageable redeems)')).toBeInTheDocument();
+    expect(screen.getByText('Headpats')).toBeInTheDocument();
+    expect(screen.getByText('Throw Instruments')).toBeInTheDocument();
+    expect(screen.queryByText('Read-only Reward')).not.toBeInTheDocument();
     expect(screen.getByText('3D app detected')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Open in TuberSwitch/i }));
 
@@ -650,6 +817,7 @@ describe('App workflows', () => {
     ]);
     vi.mocked(api.getStreamSignalProfiles).mockResolvedValue(['Gaming Stream', 'Music Stream']);
     vi.mocked(api.getStreamSignalCurrentProfile).mockResolvedValue({ id: 'gaming', name: 'Gaming Stream' });
+    vi.mocked(api.getStreamSignalAnnouncementFields).mockResolvedValue([]);
     vi.mocked(api.getStreamSignalAnnounceStatus).mockResolvedValue({ lastRun: '', success: false });
     vi.mocked(api.getStreamSignalEndStreamStatus).mockResolvedValue({ lastRun: '', success: false });
     vi.mocked(api.getTideReaderProfiles).mockResolvedValue(['Listening Party', 'Gaming Overlay']);
@@ -689,6 +857,17 @@ describe('App workflows', () => {
     expect(api.getTuberSwitchCurrentProfile).toHaveBeenCalledTimes(1);
   });
 
+  it('shows OBS offline when StreamSignal omits OBS status', async () => {
+    render(<App />);
+
+    const readiness = await screen.findByLabelText('Stream readiness');
+    const obsItem = within(readiness).getByText('OBS').closest('article');
+    expect(obsItem).not.toBeNull();
+    expect(obsItem).toHaveClass('readiness-offline');
+    expect(within(obsItem as HTMLElement).getByText('Offline')).toBeInTheDocument();
+    expect(within(obsItem as HTMLElement).queryByText('Connected')).not.toBeInTheDocument();
+  });
+
   it('starts installed offline modules when auto-start is enabled', async () => {
     vi.mocked(api.refreshModules).mockResolvedValue([
       moduleFixture({
@@ -713,6 +892,49 @@ describe('App workflows', () => {
     await user.selectOptions((await screen.findAllByLabelText(/Profile/i))[0], 'Music Stream');
 
     await waitFor(() => expect(api.activateStreamSignalProfile).toHaveBeenCalledWith('Music Stream'));
+  });
+
+  it('reloads StreamSignal announcement fields after profile activation', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.refreshModules)
+      .mockResolvedValueOnce([moduleFixture(), tideReaderModuleFixture(), tuberSwitchModuleFixture()])
+      .mockResolvedValueOnce([
+        moduleFixture({
+          status: {
+            state: 'idle',
+            message: 'Ready',
+            activeProfile: 'Music Stream',
+            activeProfileId: 'music',
+            streamTitle: 'Music Stream Title',
+            streamUrl: 'https://example.com/music',
+            category: 'Music',
+            hashtags: '#music',
+          },
+        }),
+        tideReaderModuleFixture(),
+        tuberSwitchModuleFixture(),
+      ]);
+    vi.mocked(api.getStreamSignalCurrentProfile)
+      .mockResolvedValueOnce({ id: 'gaming', name: 'Gaming Stream' })
+      .mockResolvedValue({ id: 'music', name: 'Music Stream' });
+    vi.mocked(api.getStreamSignalAnnouncementFields).mockResolvedValue([
+      { id: 'stream_title', name: 'Stream Title', value: 'Stale Stored Title' },
+      { id: 'stream_url', name: 'Stream URL', value: 'https://example.com/stale' },
+      { id: 'category', name: 'Category/Game', value: 'Stale Category' },
+      { id: 'hashtags', name: 'Hashtags', value: '#stale' },
+    ]);
+
+    render(<App />);
+
+    await user.selectOptions((await screen.findAllByLabelText(/Profile/i))[0], 'Music Stream');
+    await waitFor(() => expect(api.activateStreamSignalProfile).toHaveBeenCalledWith('Music Stream'));
+    await user.click(await screen.findByRole('button', { name: 'View StreamSignal app details' }));
+
+    expect(await screen.findByDisplayValue('Music Stream Title')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('https://example.com/music')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Music')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('#music')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Stale Stored Title')).not.toBeInTheDocument();
   });
 
   it('activates a TideReader profile through the full app wiring', async () => {

@@ -11,12 +11,19 @@ The application currently:
 - Limits decoded SIP response bodies to 1 MiB.
 - Starts StreamSignal, TideReader, and TuberSwitch in `--service` mode for managed launches.
 - Shuts down processes it launched when LivePanel exits.
+- Sends manual-control changes only to local SIP endpoints owned by the dependent app.
 
 LivePanel does not expose a public network service.
 
 ## Sensitive Data
 
 LivePanel does not own StreamSignal credentials, TideReader overlay/profile data, TuberSwitch account or avatar settings, profile storage, or destination secrets. Those remain in the owning Starsong tools and their Windows data stores. Avoid copying production credential stores into test fixtures or repository files.
+
+## Manual Control Data
+
+LivePanel can pass user-edited StreamSignal announcement fields, TideReader browser support changes, and TuberSwitch redeem toggles to local SIP endpoints. These payloads are limited to the action being requested and stay inside loopback-only communication with the owning app.
+
+StreamSignal one-time announcement field edits are sent with the `Go Live` request and are not persisted by LivePanel. TuberSwitch redeem changes use the manual/session endpoint so LivePanel does not save those changes back to the selected TuberSwitch profile. TideReader browser support is treated as an app-level setting owned by TideReader.
 
 ## Linked Dev Builds
 

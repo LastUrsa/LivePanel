@@ -112,7 +112,7 @@ mirror_has_output() {
   local dest="$src_root/$display"
   case "$display" in
     TideReader)
-      [[ -f "$dest/artifacts/publish/win-x64-livepanel-dev/TideReader.Desktop.exe" ]]
+      [[ -f "$dest/artifacts/publish/win-x64-livepanel-dev/TideReader.Desktop.exe" || -f "$dest/artifacts/publish/win-x64-livepanel-dev/TideReader.exe" ]]
       ;;
     LivePanel|StreamSignal|TuberSwitch)
       [[ -d "$dest/build/bin" ]]

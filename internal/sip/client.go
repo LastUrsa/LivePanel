@@ -118,6 +118,27 @@ func (c *Client) GetCurrentProfile(ctx context.Context) (CurrentProfileResponse,
 	return out, nil
 }
 
+func (c *Client) GetAnnouncementFields(ctx context.Context) (AnnouncementFieldsResponse, error) {
+	var out AnnouncementFieldsResponse
+	err := c.get(ctx, "/api/v1/announcement-fields", &out)
+	if err != nil {
+		return AnnouncementFieldsResponse{}, err
+	}
+	if out.Fields == nil {
+		out.Fields = []AnnouncementField{}
+	}
+	return out, nil
+}
+
+func (c *Client) UpdateAnnouncementFields(ctx context.Context, fields []UpdateAnnouncementFieldRequest) (SuccessResponse, error) {
+	var out SuccessResponse
+	err := c.post(ctx, "/api/v1/announcement-fields", UpdateAnnouncementFieldsRequest{Fields: fields}, &out)
+	if err != nil {
+		return SuccessResponse{}, err
+	}
+	return out, nil
+}
+
 func (c *Client) ActivateProfile(ctx context.Context, profile string) (ProfileActivationResponse, error) {
 	var out ProfileActivationResponse
 	err := c.post(ctx, "/api/v1/profile", ActivateProfileRequest{Profile: profile}, &out)
@@ -127,9 +148,57 @@ func (c *Client) ActivateProfile(ctx context.Context, profile string) (ProfileAc
 	return out, nil
 }
 
-func (c *Client) Announce(ctx context.Context) (AnnounceResponse, error) {
+func (c *Client) GetBrowserSupport(ctx context.Context) (BrowserSupportResponse, error) {
+	var out BrowserSupportResponse
+	err := c.get(ctx, "/api/v1/browser-support", &out)
+	if err != nil {
+		return BrowserSupportResponse{}, err
+	}
+	return out, nil
+}
+
+func (c *Client) SetBrowserSupport(ctx context.Context, enabled bool) (SuccessResponse, error) {
+	var out SuccessResponse
+	err := c.post(ctx, "/api/v1/browser-support", BrowserSupportRequest{Enabled: enabled}, &out)
+	if err != nil {
+		return SuccessResponse{}, err
+	}
+	return out, nil
+}
+
+func (c *Client) GetRedeems(ctx context.Context) (RedeemsResponse, error) {
+	var out RedeemsResponse
+	err := c.get(ctx, "/api/v1/redeems", &out)
+	if err != nil {
+		return RedeemsResponse{}, err
+	}
+	if out.Redeems == nil {
+		out.Redeems = []Redeem{}
+	}
+	return out, nil
+}
+
+func (c *Client) SetRedeems(ctx context.Context, redeems []UpdateRedeemRequest) (SuccessResponse, error) {
+	var out SuccessResponse
+	err := c.post(ctx, "/api/v1/redeems", UpdateRedeemsRequest{Redeems: redeems}, &out)
+	if err != nil {
+		return SuccessResponse{}, err
+	}
+	return out, nil
+}
+
+func (c *Client) ApplyRedeemsManual(ctx context.Context, redeems []UpdateRedeemRequest) (SuccessResponse, error) {
+	var out SuccessResponse
+	err := c.post(ctx, "/api/v1/redeems/manual", UpdateRedeemsRequest{Redeems: redeems}, &out)
+	if err != nil {
+		return SuccessResponse{}, err
+	}
+	return out, nil
+}
+
+func (c *Client) Announce(ctx context.Context, fields []UpdateAnnouncementFieldRequest) (AnnounceResponse, error) {
 	var out AnnounceResponse
-	err := c.post(ctx, "/api/v1/announce", map[string]any{}, &out)
+	err := c.post(ctx, "/api/v1/announce", AnnounceRequest{Fields: fields}, &out)
 	if err != nil {
 		return AnnounceResponse{}, err
 	}
