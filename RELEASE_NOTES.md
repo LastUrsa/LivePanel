@@ -10,6 +10,7 @@ Release notes are part of the LivePanel release process. Before publishing a rel
 - Supports one-time StreamSignal announcement field edits for `Go Live` without saving those edits back to the selected StreamSignal profile.
 - Adds TideReader browser support controls and improves the LivePanel overlay preview for browser-disabled states, Smart Text overflow modes, and unlimited `0` character limits.
 - Adds TuberSwitch manageable redeem controls that use the manual/session endpoint instead of mutating profile redeems.
+- Adds main-screen indicators for temporary `Manual edit` overrides and TideReader `Browser Support On` state.
 - Makes the app details drawer resizable and updates drawer headings to describe app-owned data instead of implying every value is profile-owned.
 - Makes OBS readiness conservative: missing, offline, disconnected, or not-connected OBS status is shown as offline with the design-system danger color.
 

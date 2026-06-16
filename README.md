@@ -29,6 +29,7 @@ Update this table for each LivePanel release. Historical per-release requirement
 - Lets a user toggle TideReader browser support as an app-level setting.
 - Shows TideReader overlay preview data from local now-playing and overlay settings JSON, including Smart Text overflow modes. When TideReader browser support is disabled, browser-sourced now-playing data is hidden from the preview.
 - Shows only manageable TuberSwitch redeems in LivePanel and applies redeem toggle changes through TuberSwitch's manual/session endpoint instead of saving them back to the profile.
+- Marks temporary StreamSignal and TuberSwitch session overrides with a `Manual edit` indicator, and marks TideReader app-level browser support with a `Browser Support On` indicator.
 - Uses a resizable app details drawer for per-app status and manual controls.
 
 LivePanel does not store StreamSignal credentials, TideReader overlay/profile data, TuberSwitch account or avatar settings, profile storage, or destination secrets. Those stay in the owning apps.
@@ -128,6 +129,8 @@ LivePanel manual controls are intentionally scoped to the owning app:
 - StreamSignal announcement fields are temporary per announcement. LivePanel sends the current field drafts with `Go Live`; it does not save those drafts to the selected StreamSignal profile.
 - TideReader browser support is an app-level toggle because TideReader does not tie that setting to profiles.
 - TuberSwitch redeem toggles use the manual/session redeem endpoint so LivePanel can adjust the current stream session without mutating the selected TuberSwitch profile.
+
+Temporary StreamSignal and TuberSwitch overrides show a `Manual edit` indicator on the main setup cards until the values match the selected profile again. TideReader browser support shows `Browser Support On` when enabled because that toggle is app-level rather than profile/session-specific.
 
 The app detail drawers use SIP capabilities and status payloads to decide which controls to show. If an older dependent app does not expose a required capability or endpoint, the corresponding LivePanel control may be hidden or show an unavailable state.
 

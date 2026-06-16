@@ -116,6 +116,7 @@ type StreamSignalWorkflow = {
   currentProfile: CurrentProfile;
   announcementFields: AnnouncementField[];
   announcementFieldDrafts: Record<string, string>;
+  hasSessionChanges: boolean;
   announceStatus: AnnounceStatus;
   endStreamStatus: EndStreamStatus;
   selectedProfile: string;
@@ -136,8 +137,11 @@ type TideReaderWorkflow = {
   selectedProfile: string;
   busy: boolean;
   error?: string;
+  hasSessionChanges?: boolean;
   browserSupport?: BrowserSupport;
+  browserSupportPending?: boolean;
   redeems?: Redeem[];
+  pendingRedeemIds?: string[];
   onSelectProfile: (profile: string) => void;
   onToggleBrowserSupport?: (enabled: boolean) => void;
   onToggleRedeem?: (id: string, enabled: boolean) => void;
@@ -169,6 +173,16 @@ function fieldDraftsFrom(fields: AnnouncementField[]) {
     drafts[field.id] = field.value;
     return drafts;
   }, {});
+}
+
+function fieldDraftsEqual(left: Record<string, string>, right: Record<string, string>) {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  for (const key of keys) {
+    if ((left[key] ?? '') !== (right[key] ?? '')) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function fieldOverridesFrom(fields: AnnouncementField[], drafts: Record<string, string>) {
@@ -616,7 +630,7 @@ export function Dashboard({
   const activeProfileName = workflow.currentProfile.name || statusValue(streamSignal?.status ?? {}, 'activeProfile');
   const goLiveDisabled = !streamSignal?.running || !activeProfileName || workflow.busy;
   const setupMessage = streamSetupMessage(modules, workflow, tideReaderWorkflow, tuberSwitchWorkflow);
-  const setupTone = setupMessage.startsWith('✓') ? 'running' : 'warning';
+  const setupTone = setupMessage === 'All modules connected and ready.' ? 'running' : 'warning';
 
   return (
     <main className="content" aria-labelledby="dashboard-title">
@@ -645,6 +659,7 @@ export function Dashboard({
                 selectedProfile={workflow.selectedProfile}
                 currentProfile={activeProfileName}
                 busy={workflow.busy}
+                hasSessionChanges={workflow.hasSessionChanges}
                 selected={detailTarget === 'streamsignal'}
                 onSelectProfile={workflow.onSelectProfile}
                 onPreview={() => setDetailTarget('streamsignal')}
@@ -658,6 +673,8 @@ export function Dashboard({
                 selectedProfile={tideReaderWorkflow.selectedProfile}
                 currentProfile={tideReaderWorkflow.currentProfile.name}
                 busy={tideReaderWorkflow.busy}
+                hasSessionChanges={false}
+                statusBadge={tideReaderWorkflow.browserSupport?.enabled ? 'Browser Support On' : ''}
                 selected={detailTarget === 'tidereader'}
                 onSelectProfile={tideReaderWorkflow.onSelectProfile}
                 onPreview={() => setDetailTarget('tidereader')}
@@ -672,6 +689,7 @@ export function Dashboard({
                 currentProfile={tuberSwitchDisplayProfile(tuberSwitch, tuberSwitchWorkflow)}
                 busy={tuberSwitchWorkflow.busy}
                 error={tuberSwitchWorkflow.error}
+                hasSessionChanges={Boolean(tuberSwitchWorkflow.hasSessionChanges)}
                 selected={detailTarget === 'tuberswitch'}
                 onSelectProfile={tuberSwitchWorkflow.onSelectProfile}
                 onPreview={() => setDetailTarget('tuberswitch')}
@@ -721,21 +739,21 @@ function streamSetupMessage(modules: ModuleInfo[], workflow: StreamSignalWorkflo
   ];
   const unavailable = moduleChecks.find((entry) => !entry.module?.running);
   if (unavailable) {
-    return `⚠ ${unavailable.name} unavailable.`;
+    return `${unavailable.name} unavailable.`;
   }
   if (!(workflow.currentProfile.name || workflow.selectedProfile)) {
-    return '⚠ No StreamSignal profile selected.';
+    return 'No StreamSignal profile selected.';
   }
   if (!(tideReaderWorkflow.currentProfile.name || tideReaderWorkflow.selectedProfile)) {
-    return '⚠ No TideReader profile selected.';
+    return 'No TideReader profile selected.';
   }
   if (!(tuberSwitchWorkflow.currentProfile.name || tuberSwitchWorkflow.selectedProfile)) {
-    return '⚠ No TuberSwitch profile selected.';
+    return 'No TuberSwitch profile selected.';
   }
   if (tuberSwitchWorkflow.error) {
-    return '⚠ Recovery actions require attention.';
+    return 'Recovery actions require attention.';
   }
-  return '✓ All modules connected and ready.';
+  return 'All modules connected and ready.';
 }
 
 function onlineModuleCount(modules: ModuleInfo[]) {
@@ -772,6 +790,8 @@ function SetupProfileCard({
   currentProfile,
   busy,
   error,
+  hasSessionChanges,
+  statusBadge,
   selected,
   onSelectProfile,
   onPreview,
@@ -785,18 +805,22 @@ function SetupProfileCard({
   currentProfile: string;
   busy: boolean;
   error?: string;
+  hasSessionChanges?: boolean;
+  statusBadge?: string;
   selected: boolean;
   onSelectProfile: (profile: string) => void;
   onPreview: () => void;
 }) {
   const offline = !module?.running;
+  const needsProfile = !offline && !currentProfile;
   return (
     <article className={`setup-profile-card ${selected ? 'selected' : ''}`}>
       <div className="setup-profile-header">
         <div className="setup-profile-label-row">
           <span>{title}</span>
-          <button type="button" className="detail-icon-button" onClick={onPreview} aria-label={`View ${moduleName} app details`}>
+          <button type="button" className={`detail-icon-button ${hasSessionChanges ? 'has-session-changes' : ''}`} onClick={onPreview} aria-label={`View ${moduleName} app details`}>
             <Eye aria-hidden="true" />
+            {hasSessionChanges ? <span className="session-change-dot" aria-hidden="true" /> : null}
           </button>
         </div>
         <img className="module-hero-icon" src={icon} alt="" aria-hidden="true" />
@@ -814,8 +838,12 @@ function SetupProfileCard({
         </select>
       </label>
       <div className="setup-profile-footer">
-        <span className={offline ? 'inactive' : 'active-dot'}>{offline ? `${moduleName} unavailable` : 'Active'}</span>
-        <small>{offline ? 'Offline' : currentProfile || 'No profile selected'}</small>
+        <div className="setup-profile-status-row">
+          <span className={offline ? 'inactive' : needsProfile ? 'warning-dot' : 'active-dot'}>{offline ? `${moduleName} unavailable` : needsProfile ? 'Needs profile' : 'Active'}</span>
+          {hasSessionChanges ? <span className="session-change-pill">Manual edit</span> : null}
+          {!offline && statusBadge ? <span className="app-state-pill">{statusBadge}</span> : null}
+        </div>
+        {needsProfile ? null : <small>{offline ? 'Offline' : currentProfile}</small>}
       </div>
       {error ? <p className="module-inline-message error">{error}</p> : null}
     </article>
@@ -1020,18 +1048,12 @@ function profileDetailMeta(target: ProfilePreviewTarget, modules: ModuleInfo[], 
 function StreamSignalPreview({ module, workflow, onOpen, onRefresh }: { module: ModuleInfo | null; workflow: StreamSignalWorkflow; onOpen: (id: string) => void; onRefresh: () => void }) {
   const status = module?.status ?? {};
   const showAnnouncementFields = hasCapability(module, 'announcement-fields') || workflow.announcementFields.length > 0;
-  const streamURL = statusValue(status, 'streamUrl') || announcementFieldDraftValue(workflow, 'stream_url') || 'Not set';
-  const category = statusValue(status, 'category') || announcementFieldDraftValue(workflow, 'category') || 'Not set';
-  const hashtags = statusValue(status, 'hashtags') || announcementFieldDraftValue(workflow, 'hashtags') || 'Not set';
   return (
     <div className="drawer-content">
-      <PreviewField label="Stream URL" value={streamURL} />
-      <PreviewField label="Category/Game" value={category} />
-      <PreviewField label="Hashtags" value={hashtags} />
       <PreviewField label="Destinations" value={streamSignalDestinationLabel(status)} />
       <PreviewField label="Platforms" value={streamSignalPlatformLabel(status)} />
       {showAnnouncementFields ? <AnnouncementFieldsEditor workflow={workflow} /> : null}
-      <PreviewField label="Included image" value={statusValue(status, 'image') || 'Not reported'} />
+      <PreviewField label="Included image" value={statusValue(status, 'image') || 'None included'} />
       <PreviewField label="Template" value={statusValue(status, 'template') || 'Not reported'} />
       <PreviewField label="Last Used" value={formatRun(workflow.announceStatus.lastRun)} />
       <PreviewField label="Last StreamSignal Action" value={latestActivity(workflow.announceStatus, workflow.endStreamStatus)} />
@@ -1144,7 +1166,7 @@ function BrowserSupportControl({ workflow }: { workflow: TideReaderWorkflow }) {
         <input
           type="checkbox"
           checked={enabled}
-          disabled={workflow.busy || !workflow.onToggleBrowserSupport}
+          disabled={workflow.browserSupportPending || !workflow.onToggleBrowserSupport}
           onChange={(event) => workflow.onToggleBrowserSupport?.(event.currentTarget.checked)}
         />
       </label>
@@ -1155,6 +1177,7 @@ function BrowserSupportControl({ workflow }: { workflow: TideReaderWorkflow }) {
 
 function RedeemList({ workflow, status }: { workflow: TideReaderWorkflow; status: Record<string, unknown> }) {
   const redeems = (workflow.redeems ?? []).filter((redeem) => redeem.available);
+  const pendingRedeems = new Set(workflow.pendingRedeemIds ?? []);
   return (
     <div className="drawer-control-group">
       <div className="drawer-control-heading">
@@ -1173,7 +1196,7 @@ function RedeemList({ workflow, status }: { workflow: TideReaderWorkflow; status
             <input
               type="checkbox"
               checked={redeem.enabled}
-              disabled={workflow.busy || !workflow.onToggleRedeem}
+              disabled={pendingRedeems.has(redeem.id) || !workflow.onToggleRedeem}
               onChange={(event) => workflow.onToggleRedeem?.(redeem.id, event.currentTarget.checked)}
             />
           </label>
@@ -1853,11 +1876,14 @@ export default function App() {
   const [tideReaderSelectedProfile, setTideReaderSelectedProfile] = useState('');
   const [tideReaderOverlay, setTideReaderOverlay] = useState<TideReaderOverlaySnapshot>(emptyTideReaderOverlay);
   const [tideReaderBrowserSupport, setTideReaderBrowserSupportState] = useState<BrowserSupport>({ enabled: false });
+  const [tideReaderBrowserSupportPending, setTideReaderBrowserSupportPending] = useState(false);
   const [tuberSwitchProfiles, setTuberSwitchProfiles] = useState<string[]>([]);
   const [tuberSwitchCurrentProfile, setTuberSwitchCurrentProfile] = useState<CurrentProfile>({ id: '', name: '' });
   const [tuberSwitchSelectedProfile, setTuberSwitchSelectedProfile] = useState('');
   const [tuberSwitchProfileError, setTuberSwitchProfileError] = useState('');
   const [tuberSwitchRedeems, setTuberSwitchRedeems] = useState<Redeem[]>([]);
+  const [tuberSwitchRedeemsDirty, setTuberSwitchRedeemsDirty] = useState(false);
+  const [pendingTuberSwitchRedeemIds, setPendingTuberSwitchRedeemIds] = useState<string[]>([]);
   const [announceStatus, setAnnounceStatus] = useState<AnnounceStatus>({ lastRun: '', success: false });
   const [endStreamStatus, setEndStreamStatus] = useState<EndStreamStatus>({ lastRun: '', success: false });
   const [workflowBusy, setWorkflowBusy] = useState(false);
@@ -1866,6 +1892,33 @@ export default function App() {
   const [autoStartEnabled, setAutoStartEnabled] = useState(true);
   const [moduleConfigs, setModuleConfigs] = useState<ModuleExecutableConfig[]>([]);
   const resetAnnouncementFieldDrafts = useRef(false);
+  const announcementFieldsDirtyRef = useRef(false);
+  const announcementFieldBaselineRef = useRef<Record<string, string>>({});
+  const streamSignalProfileKeyRef = useRef('');
+  const tuberSwitchRedeemsDirtyRef = useRef(false);
+  const tuberSwitchProfileKeyRef = useRef('');
+  const tuberSwitchRedeemOverridesRef = useRef<Record<string, boolean>>({});
+  const tuberSwitchRedeemBaselineRef = useRef<Record<string, boolean>>({});
+
+  function setTuberSwitchRedeemOverride(id: string, enabled: boolean) {
+    const nextOverrides = { ...tuberSwitchRedeemOverridesRef.current };
+    if (tuberSwitchRedeemBaselineRef.current[id] === enabled) {
+      delete nextOverrides[id];
+    } else {
+      nextOverrides[id] = enabled;
+    }
+    tuberSwitchRedeemOverridesRef.current = nextOverrides;
+    setTuberSwitchRedeems((current) => current.map((redeem) => (redeem.id === id ? { ...redeem, enabled } : redeem)));
+    const isDirty = Object.keys(nextOverrides).length > 0;
+    setTuberSwitchRedeemsDirty(isDirty);
+    tuberSwitchRedeemsDirtyRef.current = isDirty;
+  }
+
+  function clearTuberSwitchRedeemOverrides() {
+    tuberSwitchRedeemOverridesRef.current = {};
+    setTuberSwitchRedeemsDirty(false);
+    tuberSwitchRedeemsDirtyRef.current = false;
+  }
 
   async function loadStreamSignalWorkflow(nextModules: ModuleInfo[]) {
     const module = streamSignalModule(nextModules);
@@ -1876,6 +1929,9 @@ export default function App() {
       setAnnouncementFields(empty.announcementFields);
       setAnnouncementFieldDrafts(empty.announcementFieldDrafts);
       setAnnouncementFieldsDirty(false);
+      announcementFieldsDirtyRef.current = false;
+      announcementFieldBaselineRef.current = {};
+      streamSignalProfileKeyRef.current = '';
       setAnnounceStatus(empty.announceStatus);
       setEndStreamStatus(empty.endStreamStatus);
       return;
@@ -1890,14 +1946,21 @@ export default function App() {
         getStreamSignalEndStreamStatus(),
       ]);
       const hydratedAnnouncementFields = hydrateAnnouncementFieldsFromStatus(nextAnnouncementFields, module.status ?? {});
+      const baselineDrafts = fieldDraftsFrom(hydratedAnnouncementFields);
+      const nextProfileKey = nextCurrentProfile.id || nextCurrentProfile.name;
+      const previousProfileKey = streamSignalProfileKeyRef.current;
+      const profileChanged = Boolean(previousProfileKey && nextProfileKey && previousProfileKey !== nextProfileKey);
       setProfiles(nextProfiles);
       setCurrentProfile(nextCurrentProfile);
       setAnnouncementFields(hydratedAnnouncementFields);
-      if (resetAnnouncementFieldDrafts.current || !announcementFieldsDirty) {
-        setAnnouncementFieldDrafts(fieldDraftsFrom(hydratedAnnouncementFields));
+      if (resetAnnouncementFieldDrafts.current || profileChanged || !announcementFieldsDirtyRef.current) {
+        setAnnouncementFieldDrafts(baselineDrafts);
         setAnnouncementFieldsDirty(false);
+        announcementFieldsDirtyRef.current = false;
         resetAnnouncementFieldDrafts.current = false;
       }
+      announcementFieldBaselineRef.current = baselineDrafts;
+      streamSignalProfileKeyRef.current = nextProfileKey;
       setSelectedProfile((current) => nextCurrentProfile.name || (nextProfiles.includes(current) ? current : ''));
       setAnnounceStatus(nextAnnounceStatus);
       setEndStreamStatus(nextEndStreamStatus);
@@ -1908,6 +1971,9 @@ export default function App() {
       setAnnouncementFields(empty.announcementFields);
       setAnnouncementFieldDrafts(empty.announcementFieldDrafts);
       setAnnouncementFieldsDirty(false);
+      announcementFieldsDirtyRef.current = false;
+      announcementFieldBaselineRef.current = {};
+      streamSignalProfileKeyRef.current = '';
       setAnnounceStatus(empty.announceStatus);
       setEndStreamStatus(empty.endStreamStatus);
     }
@@ -1922,6 +1988,7 @@ export default function App() {
       setTideReaderSelectedProfile('');
       setTideReaderOverlay(emptyTideReaderOverlay);
       setTideReaderBrowserSupportState({ enabled: false });
+      setTideReaderBrowserSupportPending(false);
       return;
     }
     try {
@@ -1947,6 +2014,7 @@ export default function App() {
       setTideReaderSelectedProfile('');
       setTideReaderOverlay(emptyTideReaderOverlay);
       setTideReaderBrowserSupportState({ enabled: false });
+      setTideReaderBrowserSupportPending(false);
     }
   }
 
@@ -1958,6 +2026,10 @@ export default function App() {
       setTuberSwitchCurrentProfile(empty.currentProfile);
       setTuberSwitchSelectedProfile('');
       setTuberSwitchRedeems([]);
+      setPendingTuberSwitchRedeemIds([]);
+      clearTuberSwitchRedeemOverrides();
+      tuberSwitchRedeemBaselineRef.current = {};
+      tuberSwitchProfileKeyRef.current = '';
       return;
     }
     try {
@@ -1970,16 +2042,34 @@ export default function App() {
         getTuberSwitchCurrentProfile(),
         redeemsRequest,
       ]);
+      const nextProfileKey = nextCurrentProfile.id || nextCurrentProfile.name;
+      const previousProfileKey = tuberSwitchProfileKeyRef.current;
+      const profileChanged = Boolean(previousProfileKey && nextProfileKey && previousProfileKey !== nextProfileKey);
       setTuberSwitchProfiles(nextProfiles);
       setTuberSwitchCurrentProfile(nextCurrentProfile);
       setTuberSwitchSelectedProfile((current) => nextCurrentProfile.name || (nextProfiles.includes(current) ? current : ''));
-      setTuberSwitchRedeems(nextRedeems);
+      if (profileChanged) {
+        clearTuberSwitchRedeemOverrides();
+      }
+      if (!tuberSwitchRedeemsDirtyRef.current || profileChanged) {
+        tuberSwitchRedeemBaselineRef.current = nextRedeems.reduce<Record<string, boolean>>((baseline, redeem) => {
+          baseline[redeem.id] = redeem.enabled;
+          return baseline;
+        }, {});
+      }
+      const overrides = tuberSwitchRedeemOverridesRef.current;
+      setTuberSwitchRedeems(nextRedeems.map((redeem) => (Object.prototype.hasOwnProperty.call(overrides, redeem.id) ? { ...redeem, enabled: overrides[redeem.id] } : redeem)));
+      tuberSwitchProfileKeyRef.current = nextProfileKey;
     } catch {
       const empty = emptyProfileWorkflowState();
       setTuberSwitchProfiles(empty.profiles);
       setTuberSwitchCurrentProfile(empty.currentProfile);
       setTuberSwitchSelectedProfile('');
       setTuberSwitchRedeems([]);
+      setPendingTuberSwitchRedeemIds([]);
+      clearTuberSwitchRedeemOverrides();
+      tuberSwitchRedeemBaselineRef.current = {};
+      tuberSwitchProfileKeyRef.current = '';
     }
   }
 
@@ -2084,6 +2174,7 @@ export default function App() {
     currentProfile,
     announcementFields,
     announcementFieldDrafts,
+    hasSessionChanges: announcementFieldsDirty,
     announceStatus,
     endStreamStatus,
     selectedProfile,
@@ -2106,12 +2197,18 @@ export default function App() {
       })();
     },
     onChangeAnnouncementField: (id: string, value: string) => {
-      setAnnouncementFieldDrafts((current) => ({ ...current, [id]: value }));
-      setAnnouncementFieldsDirty(true);
+      setAnnouncementFieldDrafts((current) => {
+        const next = { ...current, [id]: value };
+        const isDirty = !fieldDraftsEqual(next, announcementFieldBaselineRef.current);
+        setAnnouncementFieldsDirty(isDirty);
+        announcementFieldsDirtyRef.current = isDirty;
+        return next;
+      });
     },
     onResetAnnouncementFields: () => {
       setAnnouncementFieldDrafts(fieldDraftsFrom(announcementFields));
       setAnnouncementFieldsDirty(false);
+      announcementFieldsDirtyRef.current = false;
     },
     onGoLive: () => {
       void (async () => {
@@ -2162,6 +2259,7 @@ export default function App() {
     selectedProfile: tideReaderSelectedProfile,
     busy: workflowBusy,
     browserSupport: tideReaderBrowserSupport,
+    browserSupportPending: tideReaderBrowserSupportPending,
     onSelectProfile: (profile: string) => {
       void (async () => {
         setTideReaderSelectedProfile(profile);
@@ -2179,14 +2277,21 @@ export default function App() {
     },
     onToggleBrowserSupport: (enabled: boolean) => {
       void (async () => {
-        setWorkflowBusy(true);
-        const response = await setTideReaderBrowserSupport(enabled);
-        if (response.success) {
-          await load(true);
-        } else {
-          setTideReaderBrowserSupportState((current) => ({ ...current, error: response.error || 'Browser support update failed.' }));
+        const previous = tideReaderBrowserSupport;
+        setTideReaderBrowserSupportState({ enabled });
+        setTideReaderBrowserSupportPending(true);
+        try {
+          const response = await setTideReaderBrowserSupport(enabled);
+          if (response.success) {
+            await load(true);
+          } else {
+            setTideReaderBrowserSupportState({ ...previous, error: response.error || 'Browser support update failed.' });
+          }
+        } catch {
+          setTideReaderBrowserSupportState({ ...previous, error: 'Browser support update failed.' });
+        } finally {
+          setTideReaderBrowserSupportPending(false);
         }
-        setWorkflowBusy(false);
       })();
     },
   };
@@ -2198,6 +2303,8 @@ export default function App() {
     busy: workflowBusy,
     error: tuberSwitchProfileError,
     redeems: tuberSwitchRedeems,
+    pendingRedeemIds: pendingTuberSwitchRedeemIds,
+    hasSessionChanges: tuberSwitchRedeemsDirty,
     onSelectProfile: (profile: string) => {
       void (async () => {
         setTuberSwitchSelectedProfile(profile);
@@ -2209,6 +2316,7 @@ export default function App() {
         const activated = await activateTuberSwitchProfile(profile);
         if (activated.success) {
           setTuberSwitchCurrentProfile({ id: activated.profileId || '', name: activated.profile || profile });
+          clearTuberSwitchRedeemOverrides();
           await load(true);
         } else {
           setTuberSwitchProfileError(activated.error || 'Profile activation failed.');
@@ -2218,15 +2326,20 @@ export default function App() {
     },
     onToggleRedeem: (id: string, enabled: boolean) => {
       void (async () => {
-        setWorkflowBusy(true);
+        const previous = tuberSwitchRedeems.find((redeem) => redeem.id === id)?.enabled;
+        setTuberSwitchRedeemOverride(id, enabled);
+        setPendingTuberSwitchRedeemIds((current) => (current.includes(id) ? current : [...current, id]));
         setTuberSwitchProfileError('');
         const response = await setTuberSwitchRedeem(id, enabled);
         if (response.success) {
           await load(true);
         } else {
+          if (typeof previous === 'boolean') {
+            setTuberSwitchRedeemOverride(id, previous);
+          }
           setTuberSwitchProfileError(response.error || 'Redeem update failed.');
         }
-        setWorkflowBusy(false);
+        setPendingTuberSwitchRedeemIds((current) => current.filter((redeemID) => redeemID !== id));
       })();
     },
   };

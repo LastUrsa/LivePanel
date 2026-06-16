@@ -912,6 +912,7 @@ h3 {
 }
 
 .detail-icon-button {
+  position: relative;
   width: 32px;
   height: 32px;
   display: inline-grid;
@@ -935,6 +936,22 @@ h3 {
   color: var(--color-text);
 }
 
+.detail-icon-button.has-session-changes {
+  border-color: rgba(245, 186, 4, 0.58);
+  color: var(--color-text);
+}
+
+.session-change-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border: 1px solid rgba(15, 20, 44, 0.9);
+  border-radius: 999px;
+  background: var(--color-highlight);
+}
+
 .profile-select-label select,
 .path-field input {
   width: 100%;
@@ -956,6 +973,14 @@ h3 {
   color: var(--color-text-secondary);
 }
 
+.setup-profile-status-row {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .setup-profile-footer small {
   min-width: 0;
   max-width: 100%;
@@ -966,7 +991,8 @@ h3 {
 }
 
 .active-dot::before,
-.inactive::before {
+.inactive::before,
+.warning-dot::before {
   content: "";
   width: 8px;
   height: 8px;
@@ -975,7 +1001,8 @@ h3 {
 }
 
 .active-dot,
-.inactive {
+.inactive,
+.warning-dot {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -987,6 +1014,40 @@ h3 {
 
 .inactive {
   color: var(--color-text-muted);
+}
+
+.warning-dot {
+  color: var(--color-warning);
+}
+
+.setup-profile-footer .session-change-pill {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid var(--color-warning);
+  border-radius: 999px;
+  color: #ffffff;
+  background: var(--color-warning);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.setup-profile-footer .app-state-pill {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid var(--color-info);
+  border-radius: 999px;
+  color: #ffffff;
+  background: var(--color-info);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.3;
 }
 
 .setup-profile-footer button,
@@ -1721,6 +1782,12 @@ h3 {
   color: #f4dfad;
   border-color: rgba(214, 179, 106, 0.36);
   background: rgba(214, 179, 106, 0.12);
+}
+
+.current-setup-card .status-warning {
+  color: #ffffff;
+  border-color: var(--color-warning);
+  background: var(--color-warning);
 }
 
 .status-error {

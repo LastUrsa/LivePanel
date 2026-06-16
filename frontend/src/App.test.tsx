@@ -28,6 +28,7 @@ vi.mock('./lib/api/livepanel', async (importOriginal) => {
     getTideReaderProfiles: vi.fn(),
     getTuberSwitchCurrentProfile: vi.fn(),
     getTuberSwitchProfiles: vi.fn(),
+    getTuberSwitchRedeems: vi.fn(),
     listModules: vi.fn(),
     openModule: vi.fn(),
     pickModuleExecutablePath: vi.fn(),
@@ -147,6 +148,7 @@ function workflowFixture(overrides: Partial<{
   currentProfile: CurrentProfile;
   announcementFields: api.AnnouncementField[];
   announcementFieldDrafts: Record<string, string>;
+  hasSessionChanges: boolean;
   announceStatus: AnnounceStatus;
   endStreamStatus: EndStreamStatus;
   selectedProfile: string;
@@ -159,6 +161,7 @@ function workflowFixture(overrides: Partial<{
     currentProfile: { id: 'gaming', name: 'Gaming Stream' },
     announcementFields: [],
     announcementFieldDrafts: {},
+    hasSessionChanges: false,
     announceStatus: { lastRun: '2026-06-05T12:00:00Z', success: true },
     endStreamStatus: { lastRun: '', success: false },
     selectedProfile: 'Gaming Stream',
@@ -181,6 +184,7 @@ function tideReaderWorkflowFixture(overrides: Partial<{
   currentProfile: CurrentProfile;
   selectedProfile: string;
   browserSupport: api.BrowserSupport;
+  browserSupportPending: boolean;
   busy: boolean;
 }> = {}) {
   return {
@@ -188,6 +192,7 @@ function tideReaderWorkflowFixture(overrides: Partial<{
     currentProfile: { id: 'listening-party', name: 'Listening Party' },
     selectedProfile: 'Listening Party',
     browserSupport: { enabled: true },
+    browserSupportPending: false,
     busy: false,
     onSelectProfile: vi.fn(),
     onToggleBrowserSupport: vi.fn(),
@@ -200,6 +205,8 @@ function tuberSwitchWorkflowFixture(overrides: Partial<{
   currentProfile: CurrentProfile;
   selectedProfile: string;
   redeems: Redeem[];
+  pendingRedeemIds: string[];
+  hasSessionChanges: boolean;
   busy: boolean;
   error: string;
 }> = {}) {
@@ -208,6 +215,8 @@ function tuberSwitchWorkflowFixture(overrides: Partial<{
     currentProfile: { id: 'gaming', name: 'Gaming Stream' },
     selectedProfile: 'Gaming Stream',
     redeems: [],
+    pendingRedeemIds: [],
+    hasSessionChanges: false,
     busy: false,
     onSelectProfile: vi.fn(),
     onToggleRedeem: vi.fn(),
@@ -294,7 +303,7 @@ describe('Dashboard', () => {
     renderDashboard([moduleFixture(), tideReaderModuleFixture(), tuberSwitchModuleFixture()]);
 
     expect(screen.getByRole('heading', { name: 'Current Stream Setup' })).toBeInTheDocument();
-    expect(screen.getByText('✓ All modules connected and ready.')).toBeInTheDocument();
+    expect(screen.getByText('All modules connected and ready.')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Stream Status' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Modules' })).not.toBeInTheDocument();
     expect(screen.getAllByDisplayValue('Gaming Stream').length).toBeGreaterThan(0);
@@ -302,6 +311,35 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Runtime')).not.toBeInTheDocument();
     expect(screen.queryByText('Protocol Version')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Activate$/i })).not.toBeInTheDocument();
+  });
+
+  it('marks cards and detail buttons with session changes', () => {
+    renderDashboard(
+      [moduleFixture(), tideReaderModuleFixture(), tuberSwitchModuleFixture()],
+      workflowFixture({ hasSessionChanges: true }),
+      actionFixture(),
+    );
+
+    expect(screen.getByText('Manual edit')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View StreamSignal app details' })).toHaveClass('has-session-changes');
+    expect(screen.getByRole('button', { name: 'View TideReader app details' })).not.toHaveClass('has-session-changes');
+  });
+
+  it('marks TuberSwitch cards with session changes', () => {
+    render(
+      <Dashboard
+        modules={[moduleFixture(), tideReaderModuleFixture(), tuberSwitchModuleFixture()]}
+        workflow={workflowFixture()}
+        tideReaderWorkflow={tideReaderWorkflowFixture()}
+        tuberSwitchWorkflow={tuberSwitchWorkflowFixture({ hasSessionChanges: true })}
+        tideReaderOverlay={tideReaderOverlayFixture()}
+        {...actionFixture()}
+      />,
+    );
+
+    expect(screen.getByText('Manual edit')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View TuberSwitch app details' })).toHaveClass('has-session-changes');
+    expect(screen.getByRole('button', { name: 'View TideReader app details' })).not.toHaveClass('has-session-changes');
   });
 
   it('displays an unhealthy module', () => {
@@ -341,7 +379,9 @@ describe('Dashboard', () => {
       />,
     );
 
-    expect(screen.getByText('⚠ No StreamSignal profile selected.')).toBeInTheDocument();
+    expect(screen.getByText('No StreamSignal profile selected.')).toBeInTheDocument();
+    expect(screen.getByText('Needs profile')).toBeInTheDocument();
+    expect(screen.queryByText('No profile selected')).not.toBeInTheDocument();
     expect(screen.queryByText('1 Destination')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Go Live/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /End Stream/i })).toBeDisabled();
@@ -366,6 +406,7 @@ describe('Dashboard', () => {
 
     await user.click(screen.getByRole('button', { name: 'View StreamSignal app details' }));
     expect(screen.getByText('Announcement Failed')).toBeInTheDocument();
+    expect(screen.getByText('None included')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Resize app details drawer' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Close app details' }));
@@ -442,7 +483,7 @@ describe('Dashboard', () => {
     expect(labels).toEqual(['Stream Title', 'Stream URL', 'Category/Game', 'Hashtags', 'Optional Message']);
   });
 
-  it('uses announcement field values in the StreamSignal drawer summary', async () => {
+  it('keeps redundant announcement values out of the StreamSignal drawer summary', async () => {
     const user = userEvent.setup();
     render(
       <Dashboard
@@ -469,9 +510,12 @@ describe('Dashboard', () => {
 
     await user.click(screen.getByRole('button', { name: 'View StreamSignal app details' }));
 
-    expect(screen.getByText('https://example.com/field')).toBeInTheDocument();
-    expect(screen.getByText('Field Category')).toBeInTheDocument();
-    expect(screen.getByText('#field')).toBeInTheDocument();
+    expect(screen.queryByText('https://example.com/field')).not.toBeInTheDocument();
+    expect(screen.queryByText('Field Category')).not.toBeInTheDocument();
+    expect(screen.queryByText('#field')).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue('https://example.com/field')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Field Category')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('#field')).toBeInTheDocument();
     expect(screen.queryByText('Managed in StreamSignal')).not.toBeInTheDocument();
   });
 
@@ -557,6 +601,45 @@ describe('Dashboard', () => {
 
     expect(tideReaderWorkflow.onSelectProfile).toHaveBeenCalledWith('Gaming Overlay');
     expect(actions.onOpen).toHaveBeenCalledWith('tidereader');
+  });
+
+  it('marks TideReader browser support on without treating it as a manual edit', () => {
+    render(
+      <Dashboard
+        modules={[moduleFixture(), tideReaderModuleFixture(), tuberSwitchModuleFixture()]}
+        workflow={workflowFixture()}
+        tideReaderWorkflow={tideReaderWorkflowFixture({ browserSupport: { enabled: true } })}
+        tuberSwitchWorkflow={tuberSwitchWorkflowFixture()}
+        tideReaderOverlay={tideReaderOverlayFixture()}
+        {...actionFixture()}
+      />,
+    );
+
+    expect(screen.getByText('Browser Support On')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View TideReader app details' })).not.toHaveClass('has-session-changes');
+  });
+
+  it('keeps profile controls enabled while TideReader browser support is pending', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <Dashboard
+        modules={[moduleFixture(), tideReaderModuleFixture(), tuberSwitchModuleFixture()]}
+        workflow={workflowFixture()}
+        tideReaderWorkflow={tideReaderWorkflowFixture({ browserSupport: { enabled: true }, browserSupportPending: true })}
+        tuberSwitchWorkflow={tuberSwitchWorkflowFixture()}
+        tideReaderOverlay={tideReaderOverlayFixture()}
+        {...actionFixture()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'View TideReader app details' }));
+
+    const drawer = screen.getByRole('complementary', { name: 'TideReader' });
+    expect(within(drawer).getByRole('checkbox')).toBeDisabled();
+    for (const select of screen.getAllByLabelText(/Profile/i)) {
+      expect(select).toBeEnabled();
+    }
   });
 
   it('hides browser now-playing data in TideReader previews when browser support is disabled', async () => {
@@ -678,6 +761,32 @@ describe('Dashboard', () => {
 
     expect(tuberSwitchWorkflow.onSelectProfile).toHaveBeenCalledWith('Just Chatting');
     expect(actions.onOpen).toHaveBeenCalledWith('tuberswitch');
+  });
+
+  it('only marks the clicked TuberSwitch redeem as pending', async () => {
+    const user = userEvent.setup();
+    render(
+      <Dashboard
+        modules={[moduleFixture(), tideReaderModuleFixture(), tuberSwitchModuleFixture()]}
+        workflow={workflowFixture()}
+        tideReaderWorkflow={tideReaderWorkflowFixture()}
+        tuberSwitchWorkflow={tuberSwitchWorkflowFixture({
+          redeems: [
+            { id: 'headpat', name: 'Headpats', available: true, enabled: true },
+            { id: 'instrument', name: 'Throw Instruments', available: true, enabled: false },
+          ],
+          pendingRedeemIds: ['headpat'],
+        })}
+        tideReaderOverlay={tideReaderOverlayFixture()}
+        {...actionFixture()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'View TuberSwitch app details' }));
+
+    const toggles = screen.getAllByRole('checkbox');
+    expect(toggles[0]).toBeDisabled();
+    expect(toggles[1]).toBeEnabled();
   });
 
   it('shows TuberSwitch activation failures from SIP', () => {
@@ -825,6 +934,7 @@ describe('App workflows', () => {
     vi.mocked(api.getTideReaderOverlaySnapshot).mockResolvedValue(tideReaderOverlayFixture());
     vi.mocked(api.getTuberSwitchProfiles).mockResolvedValue(['Gaming Stream', 'Just Chatting']);
     vi.mocked(api.getTuberSwitchCurrentProfile).mockResolvedValue({ id: 'gaming', name: 'Gaming Stream' });
+    vi.mocked(api.getTuberSwitchRedeems).mockResolvedValue([]);
     vi.mocked(api.activateStreamSignalProfile).mockResolvedValue({ success: true, profile: 'Music Stream', profileId: 'music' });
     vi.mocked(api.activateTideReaderProfile).mockResolvedValue({ success: true, profile: 'Gaming Overlay', profileId: 'gaming-overlay' });
     vi.mocked(api.activateTuberSwitchProfile).mockResolvedValue({ success: true, profile: 'Just Chatting', profileId: 'just-chatting' });
@@ -937,6 +1047,32 @@ describe('App workflows', () => {
     expect(screen.queryByDisplayValue('Stale Stored Title')).not.toBeInTheDocument();
   });
 
+  it('keeps manual announcement field edits during dashboard polling', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.getStreamSignalAnnouncementFields).mockResolvedValue([
+      { id: 'stream_title', name: 'Stream Title', value: 'Profile Title' },
+      { id: 'stream_url', name: 'Stream URL', value: 'https://example.com/profile' },
+    ]);
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Stream Control' });
+    await user.click(await screen.findByRole('button', { name: 'View StreamSignal app details' }));
+
+    const titleInput = await screen.findByDisplayValue('Profile Title');
+    await user.clear(titleInput);
+    await user.type(titleInput, 'One Time Title');
+
+    await waitFor(() => expect(api.refreshModules).toHaveBeenCalledTimes(2), { timeout: 4000 });
+    expect(screen.getByDisplayValue('One Time Title')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Profile Title')).not.toBeInTheDocument();
+
+    expect(screen.getByText('Manual edit')).toBeInTheDocument();
+    await user.clear(titleInput);
+    await user.type(titleInput, 'Profile Title');
+    expect(screen.queryByText('Manual edit')).not.toBeInTheDocument();
+  }, 7000);
+
   it('activates a TideReader profile through the full app wiring', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -953,6 +1089,32 @@ describe('App workflows', () => {
     await user.selectOptions((await screen.findAllByLabelText(/Profile/i))[2], 'Just Chatting');
 
     await waitFor(() => expect(api.activateTuberSwitchProfile).toHaveBeenCalledWith('Just Chatting'));
+  });
+
+  it('keeps manual TuberSwitch redeem toggle state when the service rereads profile values', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.getTuberSwitchRedeems).mockResolvedValue([
+      { id: 'hydrate', name: 'Hydrate', available: true, enabled: true },
+    ]);
+    vi.mocked(api.setTuberSwitchRedeem).mockResolvedValue({ success: true });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'View TuberSwitch app details' }));
+    const redeemToggle = await screen.findByRole('checkbox');
+    expect(redeemToggle).toBeChecked();
+
+    await user.click(redeemToggle);
+
+    await waitFor(() => expect(api.setTuberSwitchRedeem).toHaveBeenCalledWith('hydrate', false));
+    expect(redeemToggle).not.toBeChecked();
+    expect(screen.getByText('Manual edit')).toBeInTheDocument();
+
+    await user.click(redeemToggle);
+
+    await waitFor(() => expect(api.setTuberSwitchRedeem).toHaveBeenCalledWith('hydrate', true));
+    expect(redeemToggle).toBeChecked();
+    expect(screen.queryByText('Manual edit')).not.toBeInTheDocument();
   });
 
   it('updates module executable locations through settings', async () => {
