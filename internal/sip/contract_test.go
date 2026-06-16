@@ -31,7 +31,7 @@ func TestClientConsumesStreamSignalSIPV1Contract(t *testing.T) {
 	if snapshot.Health.Status != "ready" || snapshot.Health.Message == "" {
 		t.Fatalf("unexpected health contract mapping: %+v", snapshot.Health)
 	}
-	assertCapabilities(t, snapshot.Capabilities.Names(), []string{"Profiles", "Status Reporting", "Announcements"})
+	assertCapabilities(t, snapshot.Capabilities.Names(), []string{"profiles", "status", "announcements"})
 	if snapshot.Status["state"] != "idle" || snapshot.Status["message"] != "Ready for announcement setup." {
 		t.Fatalf("unexpected status contract mapping: %+v", snapshot.Status)
 	}

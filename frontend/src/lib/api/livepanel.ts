@@ -2,6 +2,7 @@ import {
   ActivateStreamSignalProfile,
   ActivateTideReaderProfile,
   ActivateTuberSwitchProfile,
+  ApplyTuberSwitchRedeemsManual,
   AnnounceStreamSignal,
   ConfirmStreamSignalAnnouncement,
   EndStreamSignalStream,
@@ -10,20 +11,25 @@ import {
   GetModules,
   GetModuleExecutableConfigs,
   GetStreamSignalAnnounceStatus,
+  GetStreamSignalAnnouncementFields,
   GetStreamSignalCurrentProfile,
   GetStreamSignalEndStreamStatus,
   GetStreamSignalProfiles,
+  GetTideReaderBrowserSupport,
   GetTideReaderCurrentProfile,
   GetTideReaderOverlaySnapshot,
   GetTideReaderProfiles,
   GetTuberSwitchCurrentProfile,
   GetTuberSwitchProfiles,
+  GetTuberSwitchRedeems,
   OpenModule,
   PickModuleExecutablePath,
   RefreshModules,
   SetAutoStartManagedModules,
   SetModuleExecutablePath,
+  SetTideReaderBrowserSupport,
   StartModule,
+  UpdateStreamSignalAnnouncementFields,
 } from '../../../wailsjs/go/main/App';
 
 export type ModuleInfo = {
@@ -49,6 +55,12 @@ export type ModuleInfo = {
 export type CurrentProfile = {
   id: string;
   name: string;
+};
+
+export type AnnouncementField = {
+  id: string;
+  name: string;
+  value: string;
 };
 
 export type ProfileActivation = {
@@ -82,6 +94,23 @@ export type EndStreamStatus = {
   lastRun: string;
   success: boolean;
   error?: string;
+};
+
+export type SuccessResult = {
+  success: boolean;
+  error?: string;
+};
+
+export type BrowserSupport = {
+  enabled: boolean;
+  error?: string;
+};
+
+export type Redeem = {
+  id: string;
+  name: string;
+  available: boolean;
+  enabled: boolean;
 };
 
 export type TideReaderOverlaySnapshot = {
@@ -158,6 +187,15 @@ export function activateStreamSignalProfile(profile: string): Promise<ProfileAct
   return ActivateStreamSignalProfile(profile);
 }
 
+export async function getStreamSignalAnnouncementFields(): Promise<AnnouncementField[]> {
+  const response = await GetStreamSignalAnnouncementFields();
+  return response.fields ?? [];
+}
+
+export function updateStreamSignalAnnouncementFields(fields: Pick<AnnouncementField, 'id' | 'value'>[]): Promise<SuccessResult> {
+  return UpdateStreamSignalAnnouncementFields(fields);
+}
+
 export async function getTideReaderProfiles(): Promise<string[]> {
   const response = await GetTideReaderProfiles();
   return response.profiles ?? [];
@@ -165,6 +203,14 @@ export async function getTideReaderProfiles(): Promise<string[]> {
 
 export function getTideReaderCurrentProfile(): Promise<CurrentProfile> {
   return GetTideReaderCurrentProfile();
+}
+
+export function getTideReaderBrowserSupport(): Promise<BrowserSupport> {
+  return GetTideReaderBrowserSupport();
+}
+
+export function setTideReaderBrowserSupport(enabled: boolean): Promise<SuccessResult> {
+  return SetTideReaderBrowserSupport(enabled);
 }
 
 export function getTideReaderOverlaySnapshot(): Promise<TideReaderOverlaySnapshot> {
@@ -188,8 +234,17 @@ export function activateTuberSwitchProfile(profile: string): Promise<ProfileActi
   return ActivateTuberSwitchProfile(profile);
 }
 
-export function announceStreamSignal(): Promise<AnnounceResult> {
-  return AnnounceStreamSignal();
+export async function getTuberSwitchRedeems(): Promise<Redeem[]> {
+  const response = await GetTuberSwitchRedeems();
+  return response.redeems ?? [];
+}
+
+export function setTuberSwitchRedeem(id: string, enabled: boolean): Promise<SuccessResult> {
+  return ApplyTuberSwitchRedeemsManual([{ id, enabled }]);
+}
+
+export function announceStreamSignal(fields: Pick<AnnouncementField, 'id' | 'value'>[] = []): Promise<AnnounceResult> {
+  return AnnounceStreamSignal(fields);
 }
 
 export function confirmStreamSignalAnnouncement(confirmationId: string): Promise<AnnounceResult> {

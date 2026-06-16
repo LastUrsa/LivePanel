@@ -10,7 +10,9 @@ export function ActivateTideReaderProfile(arg1:string):Promise<sip.ProfileActiva
 
 export function ActivateTuberSwitchProfile(arg1:string):Promise<sip.ProfileActivationResponse>;
 
-export function AnnounceStreamSignal():Promise<sip.AnnounceResponse>;
+export function ApplyTuberSwitchRedeemsManual(arg1:Array<sip.UpdateRedeemRequest>):Promise<sip.SuccessResponse>;
+
+export function AnnounceStreamSignal(arg1:Array<sip.UpdateAnnouncementFieldRequest>):Promise<sip.AnnounceResponse>;
 
 export function ClearModuleExecutablePath(arg1:string):Promise<Array<main.ModuleExecutableConfig>>;
 
@@ -26,11 +28,15 @@ export function GetModules():Promise<Array<modules.Module>>;
 
 export function GetStreamSignalAnnounceStatus():Promise<sip.AnnounceStatusResponse>;
 
+export function GetStreamSignalAnnouncementFields():Promise<sip.AnnouncementFieldsResponse>;
+
 export function GetStreamSignalCurrentProfile():Promise<sip.CurrentProfileResponse>;
 
 export function GetStreamSignalEndStreamStatus():Promise<sip.EndStreamStatusResponse>;
 
 export function GetStreamSignalProfiles():Promise<sip.ProfilesResponse>;
+
+export function GetTideReaderBrowserSupport():Promise<sip.BrowserSupportResponse>;
 
 export function GetTideReaderCurrentProfile():Promise<sip.CurrentProfileResponse>;
 
@@ -42,6 +48,8 @@ export function GetTuberSwitchCurrentProfile():Promise<sip.CurrentProfileRespons
 
 export function GetTuberSwitchProfiles():Promise<sip.ProfilesResponse>;
 
+export function GetTuberSwitchRedeems():Promise<sip.RedeemsResponse>;
+
 export function OpenModule(arg1:string):Promise<Array<modules.Module>>;
 
 export function PickModuleExecutablePath(arg1:string):Promise<string>;
@@ -52,4 +60,10 @@ export function SetAutoStartManagedModules(arg1:boolean):Promise<boolean>;
 
 export function SetModuleExecutablePath(arg1:string,arg2:string):Promise<Array<main.ModuleExecutableConfig>>;
 
+export function SetTideReaderBrowserSupport(arg1:boolean):Promise<sip.SuccessResponse>;
+
+export function SetTuberSwitchRedeems(arg1:Array<sip.UpdateRedeemRequest>):Promise<sip.SuccessResponse>;
+
 export function StartModule(arg1:string):Promise<Array<modules.Module>>;
+
+export function UpdateStreamSignalAnnouncementFields(arg1:Array<sip.UpdateAnnouncementFieldRequest>):Promise<sip.SuccessResponse>;

@@ -4,17 +4,19 @@ LivePanel is a local desktop control panel for Starsong Tools.
 
 The long-term intent is for LivePanel to provide a single place to see status, launch tools, and run common actions across the Starsong Tools suite. The current implementation supports StreamSignal, TideReader, and TuberSwitch.
 
-Today, LivePanel can start StreamSignal, TideReader, and TuberSwitch in service mode, show module status, switch active profiles, send StreamSignal announcements, run the StreamSignal end-stream workflow, and preview the active TideReader overlay without opening the full tool interfaces.
+Today, LivePanel can start StreamSignal, TideReader, and TuberSwitch in service mode, show module status, switch active profiles, send StreamSignal announcements with one-time field edits, run the StreamSignal end-stream workflow, toggle app-level TideReader browser support, temporarily adjust manageable TuberSwitch redeems, and preview the active TideReader overlay without opening the full tool interfaces.
 
 ## App Requirements
 
-LivePanel requires SIP and service-mode compliant versions of the dependent Starsong apps. Earlier versions are not expected to appear in LivePanel Diagnostics.
+LivePanel v0.2.0 requires SIP and service-mode compliant versions of the dependent Starsong apps listed below. Earlier versions are not expected to appear in LivePanel Diagnostics or may not expose the controls required by this LivePanel release.
 
 | App | Minimum Version |
 | --- | --- |
-| StreamSignal | v0.4.0 |
-| TideReader | v0.5.0 |
-| TuberSwitch | v0.6.0 |
+| StreamSignal | v0.5.1 |
+| TideReader | v0.6.0 |
+| TuberSwitch | v0.7.1 |
+
+Update this table for each LivePanel release. Historical per-release requirements are tracked in [APP_COMPATIBILITY.md](./APP_COMPATIBILITY.md), and the matching release notes should repeat the requirements for that release.
 
 ## What LivePanel Does
 
@@ -23,7 +25,12 @@ LivePanel requires SIP and service-mode compliant versions of the dependent Star
 - Shows module health, active profiles, app detail drawers, SIP endpoints, resolved executable paths, capabilities, and raw status payloads.
 - Switches StreamSignal, TideReader, and TuberSwitch profiles for the current stream session.
 - Runs StreamSignal `Go Live` and `End Stream` workflows.
-- Previews TideReader's active overlay from local now-playing and overlay settings JSON.
+- Lets a user edit StreamSignal announcement fields for a single `Go Live` action without saving those edits back to the StreamSignal profile. Selecting a StreamSignal profile reloads those fields from the active profile/status data.
+- Lets a user toggle TideReader browser support as an app-level setting.
+- Shows TideReader overlay preview data from local now-playing and overlay settings JSON, including Smart Text overflow modes. When TideReader browser support is disabled, browser-sourced now-playing data is hidden from the preview.
+- Shows only manageable TuberSwitch redeems in LivePanel and applies redeem toggle changes through TuberSwitch's manual/session endpoint instead of saving them back to the profile.
+- Marks temporary StreamSignal and TuberSwitch session overrides with a `Manual edit` indicator, and marks TideReader app-level browser support with a `Browser Support On` indicator.
+- Uses a resizable app details drawer for per-app status and manual controls.
 
 LivePanel does not store StreamSignal credentials, TideReader overlay/profile data, TuberSwitch account or avatar settings, profile storage, or destination secrets. Those stay in the owning apps.
 
@@ -114,6 +121,18 @@ http://localhost:47020
 Remote hosts are rejected.
 
 Diagnostics are intentionally separate from Settings. Use the Diagnostics tab for module health, SIP endpoints, resolved executable paths, capabilities, and raw status payloads.
+
+## Manual Controls
+
+LivePanel manual controls are intentionally scoped to the owning app:
+
+- StreamSignal announcement fields are temporary per announcement. LivePanel sends the current field drafts with `Go Live`; it does not save those drafts to the selected StreamSignal profile.
+- TideReader browser support is an app-level toggle because TideReader does not tie that setting to profiles.
+- TuberSwitch redeem toggles use the manual/session redeem endpoint so LivePanel can adjust the current stream session without mutating the selected TuberSwitch profile.
+
+Temporary StreamSignal and TuberSwitch overrides show a `Manual edit` indicator on the main setup cards until the values match the selected profile again. TideReader browser support shows `Browser Support On` when enabled because that toggle is app-level rather than profile/session-specific.
+
+The app detail drawers use SIP capabilities and status payloads to decide which controls to show. If an older dependent app does not expose a required capability or endpoint, the corresponding LivePanel control may be hidden or show an unavailable state.
 
 ## Development
 

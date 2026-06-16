@@ -18,7 +18,7 @@ import {
   Square,
   XCircle,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   activateStreamSignalProfile,
   activateTideReaderProfile,
@@ -30,27 +30,35 @@ import {
   getAutoStartManagedModules,
   getModuleExecutableConfigs,
   getStreamSignalAnnounceStatus,
+  getStreamSignalAnnouncementFields,
   getStreamSignalCurrentProfile,
   getStreamSignalEndStreamStatus,
   getStreamSignalProfiles,
+  getTideReaderBrowserSupport,
   getTideReaderCurrentProfile,
   getTideReaderOverlaySnapshot,
   getTideReaderProfiles,
+  getTuberSwitchRedeems,
   getTuberSwitchCurrentProfile,
   getTuberSwitchProfiles,
   listModules,
   openModule,
   pickModuleExecutablePath,
   refreshModules,
+  setTideReaderBrowserSupport,
+  setTuberSwitchRedeem,
   setAutoStartManagedModules,
   setModuleExecutablePath,
   startModule,
+  type AnnouncementField,
   type AnnounceResult,
   type AnnounceStatus,
+  type BrowserSupport,
   type CurrentProfile,
   type EndStreamStatus,
   type ModuleExecutableConfig,
   type ModuleInfo,
+  type Redeem,
   type TideReaderOverlaySnapshot,
 } from './lib/api/livepanel';
 import './App.css';
@@ -106,12 +114,17 @@ type ModuleActions = {
 type StreamSignalWorkflow = {
   profiles: string[];
   currentProfile: CurrentProfile;
+  announcementFields: AnnouncementField[];
+  announcementFieldDrafts: Record<string, string>;
+  hasSessionChanges: boolean;
   announceStatus: AnnounceStatus;
   endStreamStatus: EndStreamStatus;
   selectedProfile: string;
   busy: boolean;
   pendingConfirmation: AnnounceResult | null;
   onSelectProfile: (profile: string) => void;
+  onChangeAnnouncementField: (id: string, value: string) => void;
+  onResetAnnouncementFields: () => void;
   onGoLive: () => void;
   onConfirmGoLive: () => void;
   onCancelConfirmation: () => void;
@@ -124,7 +137,14 @@ type TideReaderWorkflow = {
   selectedProfile: string;
   busy: boolean;
   error?: string;
+  hasSessionChanges?: boolean;
+  browserSupport?: BrowserSupport;
+  browserSupportPending?: boolean;
+  redeems?: Redeem[];
+  pendingRedeemIds?: string[];
   onSelectProfile: (profile: string) => void;
+  onToggleBrowserSupport?: (enabled: boolean) => void;
+  onToggleRedeem?: (id: string, enabled: boolean) => void;
 };
 
 type ProfilePreviewTarget = 'streamsignal' | 'tidereader' | 'tuberswitch';
@@ -141,9 +161,100 @@ function emptyWorkflowState() {
   return {
     profiles: [] as string[],
     currentProfile: { id: '', name: '' } as CurrentProfile,
+    announcementFields: [] as AnnouncementField[],
+    announcementFieldDrafts: {} as Record<string, string>,
     announceStatus: { lastRun: '', success: false } as AnnounceStatus,
     endStreamStatus: { lastRun: '', success: false } as EndStreamStatus,
   };
+}
+
+function fieldDraftsFrom(fields: AnnouncementField[]) {
+  return fields.reduce<Record<string, string>>((drafts, field) => {
+    drafts[field.id] = field.value;
+    return drafts;
+  }, {});
+}
+
+function fieldDraftsEqual(left: Record<string, string>, right: Record<string, string>) {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  for (const key of keys) {
+    if ((left[key] ?? '') !== (right[key] ?? '')) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function fieldOverridesFrom(fields: AnnouncementField[], drafts: Record<string, string>) {
+  return fields.map((field) => ({
+    id: field.id,
+    value: drafts[field.id] ?? field.value,
+  }));
+}
+
+function announcementFieldDraftValue(workflow: StreamSignalWorkflow, id: string) {
+  const field = workflow.announcementFields.find((item) => item.id === id);
+  return workflow.announcementFieldDrafts[id] ?? field?.value ?? '';
+}
+
+const announcementFieldOrder = new Map([
+  ['stream_title', 0],
+  ['stream_url', 1],
+  ['category', 2],
+  ['hashtags', 3],
+  ['message', 4],
+]);
+
+const announcementFieldLabels: Record<string, string> = {
+  stream_title: 'Stream Title',
+  stream_url: 'Stream URL',
+  category: 'Category/Game',
+  hashtags: 'Hashtags',
+  message: 'Optional Message',
+};
+
+const announcementFieldStatusKeys: Record<string, string> = {
+  stream_title: 'streamTitle',
+  stream_url: 'streamUrl',
+  category: 'category',
+  hashtags: 'hashtags',
+};
+
+const optionalAnnouncementFieldStatusKeys: Record<string, string> = {
+  message: 'optionalMessage',
+};
+
+function hydrateAnnouncementFieldsFromStatus(fields: AnnouncementField[], status: Record<string, unknown>) {
+  const hasActiveProfile = Boolean(statusValue(status, 'activeProfile') || statusValue(status, 'activeProfileId'));
+  return fields.map((field) => {
+    const requiredStatusKey = announcementFieldStatusKeys[field.id];
+    if (requiredStatusKey && hasActiveProfile) {
+      return { ...field, value: statusValue(status, requiredStatusKey) };
+    }
+    const optionalStatusKey = optionalAnnouncementFieldStatusKeys[field.id];
+    if (optionalStatusKey && Object.prototype.hasOwnProperty.call(status, optionalStatusKey)) {
+      return { ...field, value: statusValue(status, optionalStatusKey) };
+    }
+    return field;
+  });
+}
+
+function orderedAnnouncementFields(fields: AnnouncementField[]) {
+  return fields
+    .map((field, index) => ({ field, index }))
+    .sort((left, right) => {
+      const leftOrder = announcementFieldOrder.get(left.field.id) ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder = announcementFieldOrder.get(right.field.id) ?? Number.MAX_SAFE_INTEGER;
+      if (leftOrder !== rightOrder) {
+        return leftOrder - rightOrder;
+      }
+      return left.index - right.index;
+    })
+    .map(({ field }) => field);
+}
+
+function announcementFieldLabel(field: AnnouncementField) {
+  return announcementFieldLabels[field.id] ?? (field.name || field.id);
 }
 
 function emptyProfileWorkflowState() {
@@ -186,6 +297,15 @@ function statusListValue(status: Record<string, unknown>, key: string) {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim() !== '') : [];
 }
 
+function hasCapability(module: ModuleInfo | null, capability: string) {
+  const target = capability.trim().toLowerCase();
+  return (module?.capabilities ?? []).some((item) => item.trim().toLowerCase() === target);
+}
+
+function hasStatusKey(status: Record<string, unknown>, key: string) {
+  return Object.prototype.hasOwnProperty.call(status ?? {}, key);
+}
+
 function recordValue(record: Record<string, unknown>, key: string) {
   const value = record?.[key];
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -207,6 +327,9 @@ function booleanValue(record: Record<string, unknown>, key: string, fallback: bo
 }
 
 function truncateText(value: string, maxCharacters: number) {
+  if (maxCharacters <= 0) {
+    return value;
+  }
   if (!value || value.length <= maxCharacters) {
     return value;
   }
@@ -269,6 +392,30 @@ function coverURLWithCacheBuster(snapshot: TideReaderOverlaySnapshot) {
 
 function tideReaderOverlayURL(module: ModuleInfo | null, snapshot: TideReaderOverlaySnapshot) {
   return snapshot.overlayUrl || statusValue(module?.status ?? {}, 'overlayUrl') || 'http://127.0.0.1:17655/overlay';
+}
+
+function tideReaderNowPlayingIsBrowser(snapshot: TideReaderOverlaySnapshot) {
+  const nowPlaying = snapshot.nowPlaying ?? {};
+  return textValue(nowPlaying, 'provider').toLowerCase() === 'browser' || Boolean(textValue(nowPlaying, 'browser'));
+}
+
+function tideReaderSnapshotForBrowserSupport(snapshot: TideReaderOverlaySnapshot, browserSupport?: BrowserSupport) {
+  if (browserSupport?.enabled || !tideReaderNowPlayingIsBrowser(snapshot)) {
+    return snapshot;
+  }
+  return {
+    ...snapshot,
+    nowPlaying: {},
+    coverUrl: '',
+  };
+}
+
+function tideReaderSourceLabel(status: Record<string, unknown>, snapshot: TideReaderOverlaySnapshot, browserSupport?: BrowserSupport) {
+  const source = statusValue(status, 'source');
+  if (!browserSupport?.enabled && (source.toLowerCase() === 'browser' || tideReaderNowPlayingIsBrowser(snapshot))) {
+    return 'None';
+  }
+  return formatStatusState(source || 'none');
 }
 
 async function copyText(value: string) {
@@ -341,6 +488,29 @@ function tuberSwitchOBSLabel(status: Record<string, unknown>) {
   return booleanValue(status, 'obsConnected', false) ? 'Connected' : 'Not connected';
 }
 
+function streamSignalOBSReadiness(status: Record<string, unknown>): { value: string; tone: 'running' | 'warning' | 'offline' } {
+  const value = statusValue(status, 'obsStatus');
+  if (!value) {
+    return { value: 'Offline', tone: 'offline' };
+  }
+  const normalized = value.toLowerCase();
+  const offline =
+    normalized.includes('offline') ||
+    normalized.includes('disconnected') ||
+    normalized.includes('not connected') ||
+    normalized.includes('unavailable') ||
+    normalized.includes('missing');
+  if (offline) {
+    return { value, tone: 'offline' };
+  }
+  const connected =
+    normalized.includes('connected') ||
+    normalized.includes('ready') ||
+    normalized.includes('running') ||
+    normalized.includes('available');
+  return { value, tone: connected ? 'running' : 'warning' };
+}
+
 function tideReaderLayoutLabel(status: Record<string, unknown>, settings: Record<string, unknown>) {
   return statusValue(status, 'layout') || textValue(settings, 'layout', textValue(settings, 'imagePosition', 'Current overlay'));
 }
@@ -392,7 +562,7 @@ function streamSignalDestinationLabel(status: Record<string, unknown>) {
 
 function streamSignalPlatformLabel(status: Record<string, unknown>) {
   const platforms = statusListValue(status, 'destinationPlatforms');
-  return platforms.length > 0 ? platforms.map(formatStatusState).join(', ') : 'Managed in StreamSignal';
+  return platforms.length > 0 ? platforms.map(formatStatusState).join(', ') : 'Not reported';
 }
 
 function latestActivity(announceStatus: AnnounceStatus, endStreamStatus: EndStreamStatus) {
@@ -444,7 +614,8 @@ export function Dashboard({
   tuberSwitchWorkflow,
   tideReaderOverlay = emptyTideReaderOverlay,
   onOpen,
-}: { modules: ModuleInfo[]; workflow: StreamSignalWorkflow; tideReaderWorkflow: TideReaderWorkflow; tuberSwitchWorkflow?: TideReaderWorkflow; tideReaderOverlay?: TideReaderOverlaySnapshot } & Pick<ModuleActions, 'onOpen'>) {
+  onRefresh,
+}: { modules: ModuleInfo[]; workflow: StreamSignalWorkflow; tideReaderWorkflow: TideReaderWorkflow; tuberSwitchWorkflow?: TideReaderWorkflow; tideReaderOverlay?: TideReaderOverlaySnapshot } & Pick<ModuleActions, 'onOpen' | 'onRefresh'>) {
   tuberSwitchWorkflow = tuberSwitchWorkflow ?? {
     profiles: [],
     currentProfile: { id: '', name: '' },
@@ -459,7 +630,7 @@ export function Dashboard({
   const activeProfileName = workflow.currentProfile.name || statusValue(streamSignal?.status ?? {}, 'activeProfile');
   const goLiveDisabled = !streamSignal?.running || !activeProfileName || workflow.busy;
   const setupMessage = streamSetupMessage(modules, workflow, tideReaderWorkflow, tuberSwitchWorkflow);
-  const setupTone = setupMessage.startsWith('✓') ? 'running' : 'warning';
+  const setupTone = setupMessage === 'All modules connected and ready.' ? 'running' : 'warning';
 
   return (
     <main className="content" aria-labelledby="dashboard-title">
@@ -488,6 +659,7 @@ export function Dashboard({
                 selectedProfile={workflow.selectedProfile}
                 currentProfile={activeProfileName}
                 busy={workflow.busy}
+                hasSessionChanges={workflow.hasSessionChanges}
                 selected={detailTarget === 'streamsignal'}
                 onSelectProfile={workflow.onSelectProfile}
                 onPreview={() => setDetailTarget('streamsignal')}
@@ -501,6 +673,8 @@ export function Dashboard({
                 selectedProfile={tideReaderWorkflow.selectedProfile}
                 currentProfile={tideReaderWorkflow.currentProfile.name}
                 busy={tideReaderWorkflow.busy}
+                hasSessionChanges={false}
+                statusBadge={tideReaderWorkflow.browserSupport?.enabled ? 'Browser Support On' : ''}
                 selected={detailTarget === 'tidereader'}
                 onSelectProfile={tideReaderWorkflow.onSelectProfile}
                 onPreview={() => setDetailTarget('tidereader')}
@@ -515,6 +689,7 @@ export function Dashboard({
                 currentProfile={tuberSwitchDisplayProfile(tuberSwitch, tuberSwitchWorkflow)}
                 busy={tuberSwitchWorkflow.busy}
                 error={tuberSwitchWorkflow.error}
+                hasSessionChanges={Boolean(tuberSwitchWorkflow.hasSessionChanges)}
                 selected={detailTarget === 'tuberswitch'}
                 onSelectProfile={tuberSwitchWorkflow.onSelectProfile}
                 onPreview={() => setDetailTarget('tuberswitch')}
@@ -548,6 +723,7 @@ export function Dashboard({
             tideReaderOverlay={tideReaderOverlay}
             onClose={() => setDetailTarget(null)}
             onOpen={onOpen}
+            onRefresh={onRefresh}
           />
         ) : null}
       </div>
@@ -563,21 +739,21 @@ function streamSetupMessage(modules: ModuleInfo[], workflow: StreamSignalWorkflo
   ];
   const unavailable = moduleChecks.find((entry) => !entry.module?.running);
   if (unavailable) {
-    return `⚠ ${unavailable.name} unavailable.`;
+    return `${unavailable.name} unavailable.`;
   }
   if (!(workflow.currentProfile.name || workflow.selectedProfile)) {
-    return '⚠ No StreamSignal profile selected.';
+    return 'No StreamSignal profile selected.';
   }
   if (!(tideReaderWorkflow.currentProfile.name || tideReaderWorkflow.selectedProfile)) {
-    return '⚠ No TideReader profile selected.';
+    return 'No TideReader profile selected.';
   }
   if (!(tuberSwitchWorkflow.currentProfile.name || tuberSwitchWorkflow.selectedProfile)) {
-    return '⚠ No TuberSwitch profile selected.';
+    return 'No TuberSwitch profile selected.';
   }
   if (tuberSwitchWorkflow.error) {
-    return '⚠ Recovery actions require attention.';
+    return 'Recovery actions require attention.';
   }
-  return '✓ All modules connected and ready.';
+  return 'All modules connected and ready.';
 }
 
 function onlineModuleCount(modules: ModuleInfo[]) {
@@ -614,6 +790,8 @@ function SetupProfileCard({
   currentProfile,
   busy,
   error,
+  hasSessionChanges,
+  statusBadge,
   selected,
   onSelectProfile,
   onPreview,
@@ -627,18 +805,22 @@ function SetupProfileCard({
   currentProfile: string;
   busy: boolean;
   error?: string;
+  hasSessionChanges?: boolean;
+  statusBadge?: string;
   selected: boolean;
   onSelectProfile: (profile: string) => void;
   onPreview: () => void;
 }) {
   const offline = !module?.running;
+  const needsProfile = !offline && !currentProfile;
   return (
     <article className={`setup-profile-card ${selected ? 'selected' : ''}`}>
       <div className="setup-profile-header">
         <div className="setup-profile-label-row">
           <span>{title}</span>
-          <button type="button" className="detail-icon-button" onClick={onPreview} aria-label={`View ${moduleName} profile details`}>
+          <button type="button" className={`detail-icon-button ${hasSessionChanges ? 'has-session-changes' : ''}`} onClick={onPreview} aria-label={`View ${moduleName} app details`}>
             <Eye aria-hidden="true" />
+            {hasSessionChanges ? <span className="session-change-dot" aria-hidden="true" /> : null}
           </button>
         </div>
         <img className="module-hero-icon" src={icon} alt="" aria-hidden="true" />
@@ -656,15 +838,19 @@ function SetupProfileCard({
         </select>
       </label>
       <div className="setup-profile-footer">
-        <span className={offline ? 'inactive' : 'active-dot'}>{offline ? `${moduleName} unavailable` : 'Active'}</span>
-        <small>{offline ? 'Offline' : currentProfile || 'No profile selected'}</small>
+        <div className="setup-profile-status-row">
+          <span className={offline ? 'inactive' : needsProfile ? 'warning-dot' : 'active-dot'}>{offline ? `${moduleName} unavailable` : needsProfile ? 'Needs profile' : 'Active'}</span>
+          {hasSessionChanges ? <span className="session-change-pill">Manual edit</span> : null}
+          {!offline && statusBadge ? <span className="app-state-pill">{statusBadge}</span> : null}
+        </div>
+        {needsProfile ? null : <small>{offline ? 'Offline' : currentProfile}</small>}
       </div>
       {error ? <p className="module-inline-message error">{error}</p> : null}
     </article>
   );
 }
 
-function ReadinessItem({ icon, label, value, tone }: { icon: 'modules' | 'obs' | 'internet' | 'twitch'; label: string; value: string; tone: 'running' | 'warning' }) {
+function ReadinessItem({ icon, label, value, tone }: { icon: 'modules' | 'obs' | 'internet' | 'twitch'; label: string; value: string; tone: 'running' | 'warning' | 'offline' }) {
   const Icon = icon === 'modules' ? Package : icon === 'obs' ? Monitor : icon === 'internet' ? Globe2 : MessageSquare;
   return (
     <article className={`readiness-item readiness-${tone}`}>
@@ -678,10 +864,11 @@ function ReadinessItem({ icon, label, value, tone }: { icon: 'modules' | 'obs' |
 function TopbarReadiness({ modules }: { modules: ModuleInfo[] }) {
   const streamSignal = streamSignalModule(modules);
   const onlineCount = onlineModuleCount(modules);
+  const obsReadiness = streamSignalOBSReadiness(streamSignal?.status ?? {});
   return (
     <div className="topbar-readiness" aria-label="Stream readiness">
       <ReadinessItem icon="modules" label="Modules" value={`${onlineCount} / 3`} tone={onlineCount === 3 ? 'running' : 'warning'} />
-      <ReadinessItem icon="obs" label="OBS" value={statusValue(streamSignal?.status ?? {}, 'obsStatus') || 'Connected'} tone="running" />
+      <ReadinessItem icon="obs" label="OBS" value={obsReadiness.value} tone={obsReadiness.tone} />
       <ReadinessItem icon="internet" label="Internet" value={statusValue(streamSignal?.status ?? {}, 'internetStatus') || 'Stable'} tone="running" />
       <ReadinessItem icon="twitch" label="Twitch" value={statusValue(streamSignal?.status ?? {}, 'twitchStatus') || 'Connected'} tone="running" />
     </div>
@@ -765,6 +952,7 @@ function ProfileDetailDrawer({
   tideReaderOverlay,
   onClose,
   onOpen,
+  onRefresh,
 }: {
   target: ProfilePreviewTarget;
   modules: ModuleInfo[];
@@ -774,7 +962,10 @@ function ProfileDetailDrawer({
   tideReaderOverlay: TideReaderOverlaySnapshot;
   onClose: () => void;
   onOpen: (id: string) => void;
+  onRefresh: () => void;
 }) {
+  const [drawerWidth, setDrawerWidth] = useState(380);
+
   useEffect(() => {
     function onKeyDown(event: globalThis.KeyboardEvent) {
       if (event.key === 'Escape') {
@@ -785,25 +976,48 @@ function ProfileDetailDrawer({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
+  function beginResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    const pointerID = event.pointerId;
+    event.currentTarget.setPointerCapture(pointerID);
+    const startX = event.clientX;
+    const startWidth = drawerWidth;
+
+    function onPointerMove(moveEvent: PointerEvent) {
+      const maxWidth = Math.max(320, window.innerWidth - 28);
+      const nextWidth = Math.min(maxWidth, Math.max(320, startWidth + startX - moveEvent.clientX));
+      setDrawerWidth(nextWidth);
+    }
+
+    function onPointerUp() {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    }
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp, { once: true });
+  }
+
   const meta = profileDetailMeta(target, modules, workflow, tideReaderWorkflow, tuberSwitchWorkflow);
 
   return (
     <div className="profile-detail-drawer-layer" role="presentation">
-      <button className="profile-detail-scrim" type="button" onClick={onClose} aria-label="Dismiss profile details" />
-      <aside className="profile-detail-drawer" aria-labelledby="profile-detail-title">
-        <button className="icon-button detail-close" type="button" onClick={onClose} aria-label="Close profile details">
+      <button className="profile-detail-scrim" type="button" onClick={onClose} aria-label="Dismiss app details" />
+      <aside className="profile-detail-drawer" aria-labelledby="profile-detail-title" style={{ '--drawer-width': `${drawerWidth}px` } as CSSProperties}>
+        <button className="drawer-resize-handle" type="button" onPointerDown={beginResize} aria-label="Resize app details drawer" />
+        <button className="icon-button detail-close" type="button" onClick={onClose} aria-label="Close app details">
           <XCircle aria-hidden="true" />
         </button>
         <div className="profile-detail-header">
           <img className="module-hero-icon" src={meta.icon} alt="" aria-hidden="true" />
           <div>
-            <h2 id="profile-detail-title">{meta.profile}</h2>
+            <h2 id="profile-detail-title">{meta.title}</h2>
             <p>{meta.subtitle}</p>
           </div>
         </div>
-        {target === 'streamsignal' ? <StreamSignalPreview module={streamSignalModule(modules)} workflow={workflow} onOpen={onOpen} /> : null}
-        {target === 'tidereader' ? <TideReaderPreview module={tideReaderModule(modules)} workflow={tideReaderWorkflow} overlaySnapshot={tideReaderOverlay} onOpen={onOpen} /> : null}
-        {target === 'tuberswitch' ? <TuberSwitchPreview module={tuberSwitchModule(modules)} workflow={tuberSwitchWorkflow} onOpen={onOpen} /> : null}
+        {target === 'streamsignal' ? <StreamSignalPreview module={streamSignalModule(modules)} workflow={workflow} onOpen={onOpen} onRefresh={onRefresh} /> : null}
+        {target === 'tidereader' ? <TideReaderPreview module={tideReaderModule(modules)} workflow={tideReaderWorkflow} overlaySnapshot={tideReaderOverlay} onOpen={onOpen} onRefresh={onRefresh} /> : null}
+        {target === 'tuberswitch' ? <TuberSwitchPreview module={tuberSwitchModule(modules)} workflow={tuberSwitchWorkflow} onOpen={onOpen} onRefresh={onRefresh} /> : null}
       </aside>
     </div>
   );
@@ -813,36 +1027,40 @@ function profileDetailMeta(target: ProfilePreviewTarget, modules: ModuleInfo[], 
   if (target === 'tidereader') {
     return {
       icon: tideReaderIcon,
-      profile: tideReaderWorkflow.currentProfile.name || tideReaderWorkflow.selectedProfile || 'TideReader Profile',
-      subtitle: 'TideReader Profile',
+      title: 'TideReader',
+      subtitle: 'App Details',
     };
   }
   if (target === 'tuberswitch') {
     return {
       icon: tuberSwitchIcon,
-      profile: tuberSwitchDisplayProfile(tuberSwitchModule(modules), tuberSwitchWorkflow) || tuberSwitchWorkflow.selectedProfile || 'TuberSwitch Profile',
-      subtitle: 'TuberSwitch Profile',
+      title: 'TuberSwitch',
+      subtitle: 'App Details',
     };
   }
   return {
     icon: streamSignalIcon,
-    profile: workflow.currentProfile.name || workflow.selectedProfile || 'StreamSignal Profile',
-    subtitle: 'StreamSignal Profile',
+    title: 'StreamSignal',
+    subtitle: 'App Details',
   };
 }
 
-function StreamSignalPreview({ module, workflow, onOpen }: { module: ModuleInfo | null; workflow: StreamSignalWorkflow; onOpen: (id: string) => void }) {
+function StreamSignalPreview({ module, workflow, onOpen, onRefresh }: { module: ModuleInfo | null; workflow: StreamSignalWorkflow; onOpen: (id: string) => void; onRefresh: () => void }) {
   const status = module?.status ?? {};
+  const showAnnouncementFields = hasCapability(module, 'announcement-fields') || workflow.announcementFields.length > 0;
   return (
     <div className="drawer-content">
-      <PreviewField label="Stream title" value={statusValue(status, 'streamTitle') || 'Managed in StreamSignal'} />
       <PreviewField label="Destinations" value={streamSignalDestinationLabel(status)} />
-      <PreviewField label="Content group" value={statusValue(status, 'destinationGroup') || 'Current selection'} />
       <PreviewField label="Platforms" value={streamSignalPlatformLabel(status)} />
-      <PreviewField label="Included image" value={statusValue(status, 'image') || 'Managed in StreamSignal'} />
-      <PreviewField label="Template" value={statusValue(status, 'template') || 'Managed in StreamSignal'} />
+      {showAnnouncementFields ? <AnnouncementFieldsEditor workflow={workflow} /> : null}
+      <PreviewField label="Included image" value={statusValue(status, 'image') || 'None included'} />
+      <PreviewField label="Template" value={statusValue(status, 'template') || 'Not reported'} />
       <PreviewField label="Last Used" value={formatRun(workflow.announceStatus.lastRun)} />
       <PreviewField label="Last StreamSignal Action" value={latestActivity(workflow.announceStatus, workflow.endStreamStatus)} />
+      <button type="button" onClick={onRefresh}>
+        <RefreshCw aria-hidden="true" />
+        Refresh
+      </button>
       <button type="button" onClick={() => onOpen('streamsignal')}>
         <ExternalLink aria-hidden="true" />
         Open in StreamSignal
@@ -851,21 +1069,30 @@ function StreamSignalPreview({ module, workflow, onOpen }: { module: ModuleInfo 
   );
 }
 
-function TideReaderPreview({ module, workflow, overlaySnapshot, onOpen }: { module: ModuleInfo | null; workflow: TideReaderWorkflow; overlaySnapshot: TideReaderOverlaySnapshot; onOpen: (id: string) => void }) {
+function TideReaderPreview({ module, workflow, overlaySnapshot, onOpen, onRefresh }: { module: ModuleInfo | null; workflow: TideReaderWorkflow; overlaySnapshot: TideReaderOverlaySnapshot; onOpen: (id: string) => void; onRefresh: () => void }) {
   const status = module?.status ?? {};
-  const settings = overlaySnapshot.settings ?? {};
+  const displaySnapshot = tideReaderSnapshotForBrowserSupport(overlaySnapshot, workflow.browserSupport);
+  const settings = displaySnapshot.settings ?? {};
   const container = recordValue(settings, 'overlayContainerStyle');
+  const source = tideReaderSourceLabel(status, overlaySnapshot, workflow.browserSupport);
+  const showBrowserSupport = hasCapability(module, 'browser-support') || hasStatusKey(status, 'browserSupportEnabled') || Boolean(workflow.browserSupport);
   return (
     <div className="drawer-content">
       <div className="drawer-preview-frame">
-        <TideReaderOverlayPreview snapshot={overlaySnapshot} />
+        <TideReaderOverlayPreview snapshot={displaySnapshot} />
       </div>
       <PreviewField label="Profile" value={workflow.currentProfile.name || workflow.selectedProfile || 'No profile selected'} />
+      <PreviewField label="Current source" value={source} />
+      {showBrowserSupport ? <BrowserSupportControl workflow={workflow} /> : null}
       <PreviewField label="Layout" value={tideReaderLayoutLabel(status, settings)} />
       <PreviewField label="Album art" value={tideReaderAlbumArtLabel(status, settings)} />
       <PreviewField label="Status pill" value={tideReaderStatusPillLabel(status, settings)} />
       <PreviewField label="Background" value={tideReaderBackgroundLabel(status, container)} />
       <PreviewField label="Overlay URL" value={statusValue(status, 'overlayUrl') || overlaySnapshot.overlayUrl || 'Managed in TideReader'} />
+      <button type="button" onClick={onRefresh}>
+        <RefreshCw aria-hidden="true" />
+        Refresh
+      </button>
       <button type="button" onClick={() => onOpen('tidereader')}>
         <ExternalLink aria-hidden="true" />
         Open in TideReader
@@ -874,21 +1101,107 @@ function TideReaderPreview({ module, workflow, overlaySnapshot, onOpen }: { modu
   );
 }
 
-function TuberSwitchPreview({ module, workflow, onOpen }: { module: ModuleInfo | null; workflow: TideReaderWorkflow; onOpen: (id: string) => void }) {
+function TuberSwitchPreview({ module, workflow, onOpen, onRefresh }: { module: ModuleInfo | null; workflow: TideReaderWorkflow; onOpen: (id: string) => void; onRefresh: () => void }) {
   const status = module?.status ?? {};
   const activeMode = statusValue(status, 'currentModeLabel') || tuberSwitchModeLabel(statusValue(status, 'activeMode'));
+  const showRedeems = hasCapability(module, 'redeems') || (workflow.redeems ?? []).length > 0 || hasStatusKey(status, 'redeemCount');
   return (
     <div className="drawer-content">
       <PreviewField label="Profile" value={workflow.currentProfile.name || workflow.selectedProfile || 'No profile selected'} />
       <PreviewField label="Mode" value={activeMode} />
       <PreviewField label="OBS configuration" value={tuberSwitchOBSLabel(status)} />
-      <PreviewField label="Redeems" value={tuberSwitchRedeemLabel(status)} />
+      {showRedeems ? <RedeemList workflow={workflow} status={status} /> : <PreviewField label="Redeems" value={tuberSwitchRedeemLabel(status)} />}
       <PreviewField label="Detection" value={tuberSwitchDetectionLabel(status)} />
       <PreviewField label="Runtime" value={modeLabel(module?.mode || '')} />
+      <button type="button" onClick={onRefresh}>
+        <RefreshCw aria-hidden="true" />
+        Refresh
+      </button>
       <button type="button" onClick={() => onOpen('tuberswitch')}>
         <ExternalLink aria-hidden="true" />
         Open in TuberSwitch
       </button>
+    </div>
+  );
+}
+
+function AnnouncementFieldsEditor({ workflow }: { workflow: StreamSignalWorkflow }) {
+  const fields = orderedAnnouncementFields(workflow.announcementFields);
+  return (
+    <div className="drawer-control-group">
+      <div className="drawer-control-heading">
+        <span>Announcement Fields</span>
+        <button type="button" onClick={workflow.onResetAnnouncementFields} disabled={workflow.busy || fields.length === 0}>
+          <RefreshCw aria-hidden="true" />
+          Reset
+        </button>
+      </div>
+      {fields.length === 0 ? (
+        <p className="drawer-empty-line">No fields reported.</p>
+      ) : (
+        fields.map((field) => (
+          <label className="announcement-field-row" key={field.id}>
+            <span>{announcementFieldLabel(field)}</span>
+            <input
+              value={workflow.announcementFieldDrafts[field.id] ?? field.value}
+              disabled={workflow.busy}
+              onChange={(event) => workflow.onChangeAnnouncementField(field.id, event.currentTarget.value)}
+            />
+          </label>
+        ))
+      )}
+    </div>
+  );
+}
+
+function BrowserSupportControl({ workflow }: { workflow: TideReaderWorkflow }) {
+  const enabled = Boolean(workflow.browserSupport?.enabled);
+  return (
+    <div className="drawer-control-group browser-support-control">
+      <label className="drawer-inline-toggle">
+        <span>
+          <strong>Browser Support</strong>
+          <small>{enabled ? 'Enabled' : 'Disabled'}</small>
+        </span>
+        <input
+          type="checkbox"
+          checked={enabled}
+          disabled={workflow.browserSupportPending || !workflow.onToggleBrowserSupport}
+          onChange={(event) => workflow.onToggleBrowserSupport?.(event.currentTarget.checked)}
+        />
+      </label>
+      {workflow.browserSupport?.error ? <p className="module-inline-message error">{workflow.browserSupport.error}</p> : null}
+    </div>
+  );
+}
+
+function RedeemList({ workflow, status }: { workflow: TideReaderWorkflow; status: Record<string, unknown> }) {
+  const redeems = (workflow.redeems ?? []).filter((redeem) => redeem.available);
+  const pendingRedeems = new Set(workflow.pendingRedeemIds ?? []);
+  return (
+    <div className="drawer-control-group">
+      <div className="drawer-control-heading">
+        <span>Redeems</span>
+        {redeems.length > 0 ? <StatusPill label={`${redeems.length}`} tone="info" /> : null}
+      </div>
+      {redeems.length === 0 ? (
+        <p className="drawer-empty-line">{tuberSwitchRedeemLabel(status)}</p>
+      ) : (
+        redeems.map((redeem) => (
+          <label className="redeem-row" key={redeem.id}>
+            <span>
+              <strong>{redeem.name}</strong>
+              <small>{redeem.enabled ? 'Enabled' : 'Disabled'}</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={redeem.enabled}
+              disabled={pendingRedeems.has(redeem.id) || !workflow.onToggleRedeem}
+              onChange={(event) => workflow.onToggleRedeem?.(redeem.id, event.currentTarget.checked)}
+            />
+          </label>
+        ))
+      )}
     </div>
   );
 }
@@ -915,6 +1228,7 @@ function TideReaderPanel({
   const statusState = statusValue(module?.status ?? {}, 'state');
   const statusMessage = statusValue(module?.status ?? {}, 'message');
   const overlayURL = tideReaderOverlayURL(module, overlaySnapshot);
+  const displaySnapshot = tideReaderSnapshotForBrowserSupport(overlaySnapshot, workflow.browserSupport);
   const [copiedOverlayURL, setCopiedOverlayURL] = useState(false);
 
   function handleCopyOverlayURL() {
@@ -950,7 +1264,7 @@ function TideReaderPanel({
           {offline ? (
             <div className="overlay-preview-empty">TideReader is offline</div>
           ) : (
-            <TideReaderOverlayPreview snapshot={overlaySnapshot} />
+            <TideReaderOverlayPreview snapshot={displaySnapshot} />
           )}
         </div>
       </div>
@@ -1119,11 +1433,115 @@ function TideReaderOverlayPreview({ snapshot }: { snapshot: TideReaderOverlaySna
           {booleanValue(settings, 'showAppName', true) ? <span className="tr-preview-brand">TideReader</span> : null}
           {booleanValue(settings, 'showPlaybackState', true) ? <span className={`tr-preview-pill ${status}`}>{formatStatusState(status)}</span> : null}
         </div>
-        <h4 style={textStyle(settings, 'songTextStyle', 22)}>{title}</h4>
-        <p style={textStyle(settings, 'artistTextStyle', 16)}>{artist}</p>
-        {album ? <p style={textStyle(settings, 'albumTextStyle', 14)}>{album}</p> : null}
+        <SmartPreviewText as="h4" settings={settings} styleKey="songTextStyle" fallbackSize={22}>
+          {title}
+        </SmartPreviewText>
+        <SmartPreviewText as="p" settings={settings} styleKey="artistTextStyle" fallbackSize={16}>
+          {artist}
+        </SmartPreviewText>
+        {album ? (
+          <SmartPreviewText as="p" settings={settings} styleKey="albumTextStyle" fallbackSize={14}>
+            {album}
+          </SmartPreviewText>
+        ) : null}
       </div>
     </div>
+  );
+}
+
+function SmartPreviewText({
+  as,
+  settings,
+  styleKey,
+  fallbackSize,
+  children,
+}: {
+  as: 'h4' | 'p';
+  settings: Record<string, unknown>;
+  styleKey: string;
+  fallbackSize: number;
+  children: string;
+}) {
+  const containerRef = useRef<HTMLElement | null>(null);
+  const measureRef = useRef<HTMLSpanElement | null>(null);
+  const style = recordValue(settings, styleKey);
+  const mode = textValue(style, 'textOverflowMode', 'Default');
+  const fontSizePx = numberValue(style, 'fontSizePx', fallbackSize);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const [autoSizePx, setAutoSizePx] = useState(fontSizePx);
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const measure = measureRef.current;
+    if (!container || !measure || mode === 'Default' || mode === 'TwoLines') {
+      setIsOverflowing(false);
+      setAutoSizePx(fontSizePx);
+      return undefined;
+    }
+
+    const update = () => {
+      const availableWidth = container.clientWidth;
+      if (availableWidth <= 0) {
+        setIsOverflowing(false);
+        setAutoSizePx(fontSizePx);
+        return;
+      }
+      measure.style.fontSize = `${fontSizePx}px`;
+      const fullWidth = measure.scrollWidth;
+      const overflowing = fullWidth > availableWidth + 1;
+      setIsOverflowing(overflowing);
+      if (mode === 'AutoSize' && overflowing) {
+        const minimumSize = Math.max(1, Math.round(fontSizePx * 0.6));
+        setAutoSizePx(Math.max(minimumSize, Math.floor((availableWidth / fullWidth) * fontSizePx)));
+        return;
+      }
+      setAutoSizePx(fontSizePx);
+    };
+
+    update();
+    if (typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+    const resizeObserver = new ResizeObserver(update);
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, [children, fontSizePx, mode, styleKey]);
+
+  const Component = as;
+  const baseStyle = textStyle(settings, styleKey, fallbackSize);
+  const smartStyle = {
+    ...baseStyle,
+    ...(mode === 'AutoSize' ? { fontSize: `${autoSizePx}px` } : {}),
+  };
+  const shouldScroll = mode === 'Scroll' && isOverflowing;
+
+  if (mode === 'Default') {
+    return (
+      <Component className="tr-smart-text tr-smart-text-default" style={baseStyle} data-overflow-mode={mode}>
+        {children}
+      </Component>
+    );
+  }
+
+  return (
+    <Component
+      ref={containerRef as never}
+      className={`tr-smart-text tr-smart-text-${mode.toLowerCase()} ${shouldScroll ? 'is-scrolling' : ''}`.trim()}
+      style={smartStyle}
+      data-overflow-mode={mode}
+    >
+      <span className="tr-smart-text-measure" ref={measureRef} aria-hidden="true">
+        {children}
+      </span>
+      {shouldScroll ? (
+        <span className="tr-smart-text-scroll-track">
+          <span>{children}</span>
+          <span aria-hidden="true">{children}</span>
+        </span>
+      ) : (
+        <span className="tr-smart-text-content">{children}</span>
+      )}
+    </Component>
   );
 }
 
@@ -1449,15 +1867,23 @@ export default function App() {
   const [modules, setModules] = useState<ModuleInfo[]>([]);
   const [profiles, setProfiles] = useState<string[]>([]);
   const [currentProfile, setCurrentProfile] = useState<CurrentProfile>({ id: '', name: '' });
+  const [announcementFields, setAnnouncementFields] = useState<AnnouncementField[]>([]);
+  const [announcementFieldDrafts, setAnnouncementFieldDrafts] = useState<Record<string, string>>({});
+  const [announcementFieldsDirty, setAnnouncementFieldsDirty] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState('');
   const [tideReaderProfiles, setTideReaderProfiles] = useState<string[]>([]);
   const [tideReaderCurrentProfile, setTideReaderCurrentProfile] = useState<CurrentProfile>({ id: '', name: '' });
   const [tideReaderSelectedProfile, setTideReaderSelectedProfile] = useState('');
   const [tideReaderOverlay, setTideReaderOverlay] = useState<TideReaderOverlaySnapshot>(emptyTideReaderOverlay);
+  const [tideReaderBrowserSupport, setTideReaderBrowserSupportState] = useState<BrowserSupport>({ enabled: false });
+  const [tideReaderBrowserSupportPending, setTideReaderBrowserSupportPending] = useState(false);
   const [tuberSwitchProfiles, setTuberSwitchProfiles] = useState<string[]>([]);
   const [tuberSwitchCurrentProfile, setTuberSwitchCurrentProfile] = useState<CurrentProfile>({ id: '', name: '' });
   const [tuberSwitchSelectedProfile, setTuberSwitchSelectedProfile] = useState('');
   const [tuberSwitchProfileError, setTuberSwitchProfileError] = useState('');
+  const [tuberSwitchRedeems, setTuberSwitchRedeems] = useState<Redeem[]>([]);
+  const [tuberSwitchRedeemsDirty, setTuberSwitchRedeemsDirty] = useState(false);
+  const [pendingTuberSwitchRedeemIds, setPendingTuberSwitchRedeemIds] = useState<string[]>([]);
   const [announceStatus, setAnnounceStatus] = useState<AnnounceStatus>({ lastRun: '', success: false });
   const [endStreamStatus, setEndStreamStatus] = useState<EndStreamStatus>({ lastRun: '', success: false });
   const [workflowBusy, setWorkflowBusy] = useState(false);
@@ -1465,6 +1891,34 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [autoStartEnabled, setAutoStartEnabled] = useState(true);
   const [moduleConfigs, setModuleConfigs] = useState<ModuleExecutableConfig[]>([]);
+  const resetAnnouncementFieldDrafts = useRef(false);
+  const announcementFieldsDirtyRef = useRef(false);
+  const announcementFieldBaselineRef = useRef<Record<string, string>>({});
+  const streamSignalProfileKeyRef = useRef('');
+  const tuberSwitchRedeemsDirtyRef = useRef(false);
+  const tuberSwitchProfileKeyRef = useRef('');
+  const tuberSwitchRedeemOverridesRef = useRef<Record<string, boolean>>({});
+  const tuberSwitchRedeemBaselineRef = useRef<Record<string, boolean>>({});
+
+  function setTuberSwitchRedeemOverride(id: string, enabled: boolean) {
+    const nextOverrides = { ...tuberSwitchRedeemOverridesRef.current };
+    if (tuberSwitchRedeemBaselineRef.current[id] === enabled) {
+      delete nextOverrides[id];
+    } else {
+      nextOverrides[id] = enabled;
+    }
+    tuberSwitchRedeemOverridesRef.current = nextOverrides;
+    setTuberSwitchRedeems((current) => current.map((redeem) => (redeem.id === id ? { ...redeem, enabled } : redeem)));
+    const isDirty = Object.keys(nextOverrides).length > 0;
+    setTuberSwitchRedeemsDirty(isDirty);
+    tuberSwitchRedeemsDirtyRef.current = isDirty;
+  }
+
+  function clearTuberSwitchRedeemOverrides() {
+    tuberSwitchRedeemOverridesRef.current = {};
+    setTuberSwitchRedeemsDirty(false);
+    tuberSwitchRedeemsDirtyRef.current = false;
+  }
 
   async function loadStreamSignalWorkflow(nextModules: ModuleInfo[]) {
     const module = streamSignalModule(nextModules);
@@ -1472,19 +1926,41 @@ export default function App() {
       const empty = emptyWorkflowState();
       setProfiles(empty.profiles);
       setCurrentProfile(empty.currentProfile);
+      setAnnouncementFields(empty.announcementFields);
+      setAnnouncementFieldDrafts(empty.announcementFieldDrafts);
+      setAnnouncementFieldsDirty(false);
+      announcementFieldsDirtyRef.current = false;
+      announcementFieldBaselineRef.current = {};
+      streamSignalProfileKeyRef.current = '';
       setAnnounceStatus(empty.announceStatus);
       setEndStreamStatus(empty.endStreamStatus);
       return;
     }
     try {
-      const [nextProfiles, nextCurrentProfile, nextAnnounceStatus, nextEndStreamStatus] = await Promise.all([
+      const fieldRequest = getStreamSignalAnnouncementFields().catch(() => [] as AnnouncementField[]);
+      const [nextProfiles, nextCurrentProfile, nextAnnouncementFields, nextAnnounceStatus, nextEndStreamStatus] = await Promise.all([
         getStreamSignalProfiles(),
         getStreamSignalCurrentProfile(),
+        fieldRequest,
         getStreamSignalAnnounceStatus(),
         getStreamSignalEndStreamStatus(),
       ]);
+      const hydratedAnnouncementFields = hydrateAnnouncementFieldsFromStatus(nextAnnouncementFields, module.status ?? {});
+      const baselineDrafts = fieldDraftsFrom(hydratedAnnouncementFields);
+      const nextProfileKey = nextCurrentProfile.id || nextCurrentProfile.name;
+      const previousProfileKey = streamSignalProfileKeyRef.current;
+      const profileChanged = Boolean(previousProfileKey && nextProfileKey && previousProfileKey !== nextProfileKey);
       setProfiles(nextProfiles);
       setCurrentProfile(nextCurrentProfile);
+      setAnnouncementFields(hydratedAnnouncementFields);
+      if (resetAnnouncementFieldDrafts.current || profileChanged || !announcementFieldsDirtyRef.current) {
+        setAnnouncementFieldDrafts(baselineDrafts);
+        setAnnouncementFieldsDirty(false);
+        announcementFieldsDirtyRef.current = false;
+        resetAnnouncementFieldDrafts.current = false;
+      }
+      announcementFieldBaselineRef.current = baselineDrafts;
+      streamSignalProfileKeyRef.current = nextProfileKey;
       setSelectedProfile((current) => nextCurrentProfile.name || (nextProfiles.includes(current) ? current : ''));
       setAnnounceStatus(nextAnnounceStatus);
       setEndStreamStatus(nextEndStreamStatus);
@@ -1492,6 +1968,12 @@ export default function App() {
       const empty = emptyWorkflowState();
       setProfiles(empty.profiles);
       setCurrentProfile(empty.currentProfile);
+      setAnnouncementFields(empty.announcementFields);
+      setAnnouncementFieldDrafts(empty.announcementFieldDrafts);
+      setAnnouncementFieldsDirty(false);
+      announcementFieldsDirtyRef.current = false;
+      announcementFieldBaselineRef.current = {};
+      streamSignalProfileKeyRef.current = '';
       setAnnounceStatus(empty.announceStatus);
       setEndStreamStatus(empty.endStreamStatus);
     }
@@ -1505,24 +1987,34 @@ export default function App() {
       setTideReaderCurrentProfile(empty.currentProfile);
       setTideReaderSelectedProfile('');
       setTideReaderOverlay(emptyTideReaderOverlay);
+      setTideReaderBrowserSupportState({ enabled: false });
+      setTideReaderBrowserSupportPending(false);
       return;
     }
     try {
-      const [nextProfiles, nextCurrentProfile, nextOverlay] = await Promise.all([
+      const browserRequest =
+        hasCapability(module, 'browser-support') || hasStatusKey(module.status, 'browserSupportEnabled')
+          ? getTideReaderBrowserSupport().catch(() => ({ enabled: booleanValue(module.status, 'browserSupportEnabled', false) } as BrowserSupport))
+          : Promise.resolve({ enabled: false } as BrowserSupport);
+      const [nextProfiles, nextCurrentProfile, nextOverlay, nextBrowserSupport] = await Promise.all([
         getTideReaderProfiles(),
         getTideReaderCurrentProfile(),
         getTideReaderOverlaySnapshot(),
+        browserRequest,
       ]);
       setTideReaderProfiles(nextProfiles);
       setTideReaderCurrentProfile(nextCurrentProfile);
       setTideReaderSelectedProfile((current) => nextCurrentProfile.name || (nextProfiles.includes(current) ? current : ''));
       setTideReaderOverlay(nextOverlay);
+      setTideReaderBrowserSupportState(nextBrowserSupport);
     } catch {
       const empty = emptyProfileWorkflowState();
       setTideReaderProfiles(empty.profiles);
       setTideReaderCurrentProfile(empty.currentProfile);
       setTideReaderSelectedProfile('');
       setTideReaderOverlay(emptyTideReaderOverlay);
+      setTideReaderBrowserSupportState({ enabled: false });
+      setTideReaderBrowserSupportPending(false);
     }
   }
 
@@ -1533,21 +2025,51 @@ export default function App() {
       setTuberSwitchProfiles(empty.profiles);
       setTuberSwitchCurrentProfile(empty.currentProfile);
       setTuberSwitchSelectedProfile('');
+      setTuberSwitchRedeems([]);
+      setPendingTuberSwitchRedeemIds([]);
+      clearTuberSwitchRedeemOverrides();
+      tuberSwitchRedeemBaselineRef.current = {};
+      tuberSwitchProfileKeyRef.current = '';
       return;
     }
     try {
-      const [nextProfiles, nextCurrentProfile] = await Promise.all([
+      const redeemsRequest =
+        hasCapability(module, 'redeems') || hasStatusKey(module.status, 'redeemCount')
+          ? getTuberSwitchRedeems().catch(() => [] as Redeem[])
+          : Promise.resolve([] as Redeem[]);
+      const [nextProfiles, nextCurrentProfile, nextRedeems] = await Promise.all([
         getTuberSwitchProfiles(),
         getTuberSwitchCurrentProfile(),
+        redeemsRequest,
       ]);
+      const nextProfileKey = nextCurrentProfile.id || nextCurrentProfile.name;
+      const previousProfileKey = tuberSwitchProfileKeyRef.current;
+      const profileChanged = Boolean(previousProfileKey && nextProfileKey && previousProfileKey !== nextProfileKey);
       setTuberSwitchProfiles(nextProfiles);
       setTuberSwitchCurrentProfile(nextCurrentProfile);
       setTuberSwitchSelectedProfile((current) => nextCurrentProfile.name || (nextProfiles.includes(current) ? current : ''));
+      if (profileChanged) {
+        clearTuberSwitchRedeemOverrides();
+      }
+      if (!tuberSwitchRedeemsDirtyRef.current || profileChanged) {
+        tuberSwitchRedeemBaselineRef.current = nextRedeems.reduce<Record<string, boolean>>((baseline, redeem) => {
+          baseline[redeem.id] = redeem.enabled;
+          return baseline;
+        }, {});
+      }
+      const overrides = tuberSwitchRedeemOverridesRef.current;
+      setTuberSwitchRedeems(nextRedeems.map((redeem) => (Object.prototype.hasOwnProperty.call(overrides, redeem.id) ? { ...redeem, enabled: overrides[redeem.id] } : redeem)));
+      tuberSwitchProfileKeyRef.current = nextProfileKey;
     } catch {
       const empty = emptyProfileWorkflowState();
       setTuberSwitchProfiles(empty.profiles);
       setTuberSwitchCurrentProfile(empty.currentProfile);
       setTuberSwitchSelectedProfile('');
+      setTuberSwitchRedeems([]);
+      setPendingTuberSwitchRedeemIds([]);
+      clearTuberSwitchRedeemOverrides();
+      tuberSwitchRedeemBaselineRef.current = {};
+      tuberSwitchProfileKeyRef.current = '';
     }
   }
 
@@ -1650,6 +2172,9 @@ export default function App() {
   const workflow: StreamSignalWorkflow = {
     profiles,
     currentProfile,
+    announcementFields,
+    announcementFieldDrafts,
+    hasSessionChanges: announcementFieldsDirty,
     announceStatus,
     endStreamStatus,
     selectedProfile,
@@ -1665,19 +2190,36 @@ export default function App() {
         const activated = await activateStreamSignalProfile(profile);
         if (activated.success) {
           setCurrentProfile({ id: activated.profileId || '', name: activated.profile || profile });
+          resetAnnouncementFieldDrafts.current = true;
           await load(true);
         }
         setWorkflowBusy(false);
       })();
     },
+    onChangeAnnouncementField: (id: string, value: string) => {
+      setAnnouncementFieldDrafts((current) => {
+        const next = { ...current, [id]: value };
+        const isDirty = !fieldDraftsEqual(next, announcementFieldBaselineRef.current);
+        setAnnouncementFieldsDirty(isDirty);
+        announcementFieldsDirtyRef.current = isDirty;
+        return next;
+      });
+    },
+    onResetAnnouncementFields: () => {
+      setAnnouncementFieldDrafts(fieldDraftsFrom(announcementFields));
+      setAnnouncementFieldsDirty(false);
+      announcementFieldsDirtyRef.current = false;
+    },
     onGoLive: () => {
       void (async () => {
         setWorkflowBusy(true);
-        const response = await announceStreamSignal();
+        const response = await announceStreamSignal(fieldOverridesFrom(announcementFields, announcementFieldDrafts));
         if (response.requiresConfirmation) {
           setPendingConfirmation(response);
         } else if (response.success) {
+          resetAnnouncementFieldDrafts.current = true;
           setAnnounceStatus(await getStreamSignalAnnounceStatus());
+          await load(true);
         } else {
           setAnnounceStatus(await getStreamSignalAnnounceStatus());
         }
@@ -1692,6 +2234,10 @@ export default function App() {
         setWorkflowBusy(true);
         const response = await confirmStreamSignalAnnouncement(pendingConfirmation.confirmationId);
         setPendingConfirmation(null);
+        if (response.success) {
+          resetAnnouncementFieldDrafts.current = true;
+          await load(true);
+        }
         setAnnounceStatus(await getStreamSignalAnnounceStatus());
         setWorkflowBusy(false);
       })();
@@ -1712,6 +2258,8 @@ export default function App() {
     currentProfile: tideReaderCurrentProfile,
     selectedProfile: tideReaderSelectedProfile,
     busy: workflowBusy,
+    browserSupport: tideReaderBrowserSupport,
+    browserSupportPending: tideReaderBrowserSupportPending,
     onSelectProfile: (profile: string) => {
       void (async () => {
         setTideReaderSelectedProfile(profile);
@@ -1727,6 +2275,25 @@ export default function App() {
         setWorkflowBusy(false);
       })();
     },
+    onToggleBrowserSupport: (enabled: boolean) => {
+      void (async () => {
+        const previous = tideReaderBrowserSupport;
+        setTideReaderBrowserSupportState({ enabled });
+        setTideReaderBrowserSupportPending(true);
+        try {
+          const response = await setTideReaderBrowserSupport(enabled);
+          if (response.success) {
+            await load(true);
+          } else {
+            setTideReaderBrowserSupportState({ ...previous, error: response.error || 'Browser support update failed.' });
+          }
+        } catch {
+          setTideReaderBrowserSupportState({ ...previous, error: 'Browser support update failed.' });
+        } finally {
+          setTideReaderBrowserSupportPending(false);
+        }
+      })();
+    },
   };
 
   const tuberSwitchWorkflow: TideReaderWorkflow = {
@@ -1735,6 +2302,9 @@ export default function App() {
     selectedProfile: tuberSwitchSelectedProfile,
     busy: workflowBusy,
     error: tuberSwitchProfileError,
+    redeems: tuberSwitchRedeems,
+    pendingRedeemIds: pendingTuberSwitchRedeemIds,
+    hasSessionChanges: tuberSwitchRedeemsDirty,
     onSelectProfile: (profile: string) => {
       void (async () => {
         setTuberSwitchSelectedProfile(profile);
@@ -1746,11 +2316,30 @@ export default function App() {
         const activated = await activateTuberSwitchProfile(profile);
         if (activated.success) {
           setTuberSwitchCurrentProfile({ id: activated.profileId || '', name: activated.profile || profile });
+          clearTuberSwitchRedeemOverrides();
           await load(true);
         } else {
           setTuberSwitchProfileError(activated.error || 'Profile activation failed.');
         }
         setWorkflowBusy(false);
+      })();
+    },
+    onToggleRedeem: (id: string, enabled: boolean) => {
+      void (async () => {
+        const previous = tuberSwitchRedeems.find((redeem) => redeem.id === id)?.enabled;
+        setTuberSwitchRedeemOverride(id, enabled);
+        setPendingTuberSwitchRedeemIds((current) => (current.includes(id) ? current : [...current, id]));
+        setTuberSwitchProfileError('');
+        const response = await setTuberSwitchRedeem(id, enabled);
+        if (response.success) {
+          await load(true);
+        } else {
+          if (typeof previous === 'boolean') {
+            setTuberSwitchRedeemOverride(id, previous);
+          }
+          setTuberSwitchProfileError(response.error || 'Redeem update failed.');
+        }
+        setPendingTuberSwitchRedeemIds((current) => current.filter((redeemID) => redeemID !== id));
       })();
     },
   };
@@ -1804,6 +2393,7 @@ export default function App() {
             tuberSwitchWorkflow={tuberSwitchWorkflow}
             tideReaderOverlay={tideReaderOverlay}
             onOpen={(id) => void runAction(() => openModule(id))}
+            onRefresh={() => void refreshDashboardState()}
           />
         ) : page === 'settings' ? (
           <SettingsPage

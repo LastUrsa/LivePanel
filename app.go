@@ -163,6 +163,30 @@ func (a *App) ActivateStreamSignalProfile(profile string) sip.ProfileActivationR
 	return activated
 }
 
+func (a *App) GetStreamSignalAnnouncementFields() sip.AnnouncementFieldsResponse {
+	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
+	if err != nil {
+		return sip.AnnouncementFieldsResponse{Fields: []sip.AnnouncementField{}}
+	}
+	fields, err := client.GetAnnouncementFields(a.requestContext())
+	if err != nil {
+		return sip.AnnouncementFieldsResponse{Fields: []sip.AnnouncementField{}}
+	}
+	return fields
+}
+
+func (a *App) UpdateStreamSignalAnnouncementFields(fields []sip.UpdateAnnouncementFieldRequest) sip.SuccessResponse {
+	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
+	if err != nil {
+		return sip.SuccessResponse{Success: false, Error: err.Error()}
+	}
+	response, err := client.UpdateAnnouncementFields(a.requestContext(), fields)
+	if err != nil {
+		return sip.SuccessResponse{Success: false, Error: err.Error()}
+	}
+	return response
+}
+
 func (a *App) GetTideReaderProfiles() sip.ProfilesResponse {
 	client, err := a.sipClientForModule("tidereader", "TideReader")
 	if err != nil {
@@ -199,6 +223,31 @@ func (a *App) ActivateTideReaderProfile(profile string) sip.ProfileActivationRes
 	}
 	_, _ = a.service.Refresh(a.requestContext())
 	return activated
+}
+
+func (a *App) GetTideReaderBrowserSupport() sip.BrowserSupportResponse {
+	client, err := a.sipClientForModule("tidereader", "TideReader")
+	if err != nil {
+		return sip.BrowserSupportResponse{Error: err.Error()}
+	}
+	response, err := client.GetBrowserSupport(a.requestContext())
+	if err != nil {
+		return sip.BrowserSupportResponse{Error: err.Error()}
+	}
+	return response
+}
+
+func (a *App) SetTideReaderBrowserSupport(enabled bool) sip.SuccessResponse {
+	client, err := a.sipClientForModule("tidereader", "TideReader")
+	if err != nil {
+		return sip.SuccessResponse{Success: false, Error: err.Error()}
+	}
+	response, err := client.SetBrowserSupport(a.requestContext(), enabled)
+	if err != nil {
+		return sip.SuccessResponse{Success: false, Error: err.Error()}
+	}
+	_, _ = a.service.Refresh(a.requestContext())
+	return response
 }
 
 func (a *App) GetTuberSwitchProfiles() sip.ProfilesResponse {
@@ -239,6 +288,44 @@ func (a *App) ActivateTuberSwitchProfile(profile string) sip.ProfileActivationRe
 	return activated
 }
 
+func (a *App) GetTuberSwitchRedeems() sip.RedeemsResponse {
+	client, err := a.sipClientForModule("tuberswitch", "TuberSwitch")
+	if err != nil {
+		return sip.RedeemsResponse{Redeems: []sip.Redeem{}, Error: err.Error()}
+	}
+	response, err := client.GetRedeems(a.requestContext())
+	if err != nil {
+		return sip.RedeemsResponse{Redeems: []sip.Redeem{}, Error: err.Error()}
+	}
+	return response
+}
+
+func (a *App) SetTuberSwitchRedeems(redeems []sip.UpdateRedeemRequest) sip.SuccessResponse {
+	client, err := a.sipClientForModule("tuberswitch", "TuberSwitch")
+	if err != nil {
+		return sip.SuccessResponse{Success: false, Error: err.Error()}
+	}
+	response, err := client.SetRedeems(a.requestContext(), redeems)
+	if err != nil {
+		return sip.SuccessResponse{Success: false, Error: err.Error()}
+	}
+	_, _ = a.service.Refresh(a.requestContext())
+	return response
+}
+
+func (a *App) ApplyTuberSwitchRedeemsManual(redeems []sip.UpdateRedeemRequest) sip.SuccessResponse {
+	client, err := a.sipClientForModule("tuberswitch", "TuberSwitch")
+	if err != nil {
+		return sip.SuccessResponse{Success: false, Error: err.Error()}
+	}
+	response, err := client.ApplyRedeemsManual(a.requestContext(), redeems)
+	if err != nil {
+		return sip.SuccessResponse{Success: false, Error: err.Error()}
+	}
+	_, _ = a.service.Refresh(a.requestContext())
+	return response
+}
+
 func (a *App) GetTideReaderOverlaySnapshot() TideReaderOverlaySnapshot {
 	overlayURL := a.tideReaderOverlayURL()
 	if overlayURL == "" {
@@ -265,12 +352,12 @@ func (a *App) GetTideReaderOverlaySnapshot() TideReaderOverlaySnapshot {
 	}
 }
 
-func (a *App) AnnounceStreamSignal() sip.AnnounceResponse {
+func (a *App) AnnounceStreamSignal(fields []sip.UpdateAnnouncementFieldRequest) sip.AnnounceResponse {
 	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
 	if err != nil {
 		return sip.AnnounceResponse{Success: false, Error: "StreamSignal unavailable."}
 	}
-	response, err := client.Announce(a.requestContext())
+	response, err := client.Announce(a.requestContext(), fields)
 	if err != nil {
 		return sip.AnnounceResponse{Success: false, Error: err.Error()}
 	}

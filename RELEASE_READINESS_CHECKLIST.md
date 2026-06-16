@@ -7,6 +7,8 @@ This maintainer checklist is for LivePanel release candidates, packaging, and fi
 - [ ] Confirm `wails.json` and `frontend/package.json` version metadata match the release version.
 - [ ] Add or update the matching `## vX.Y.Z` section in [RELEASE_NOTES.md](./RELEASE_NOTES.md).
 - [ ] Confirm [README.md](./README.md) lists the current minimum dependent app versions.
+- [ ] Confirm [APP_COMPATIBILITY.md](./APP_COMPATIBILITY.md) includes the release's dependent app requirements.
+- [ ] Confirm the release notes section documents the release's dependent app requirements.
 - [ ] Confirm StreamSignal, TideReader, and TuberSwitch compatible releases are published.
 - [ ] Confirm no high-severity security or release-blocking issues remain open.
 
@@ -24,7 +26,11 @@ This maintainer checklist is for LivePanel release candidates, packaging, and fi
 - [ ] Verify each app can be opened with the full UI from LivePanel.
 - [ ] Verify Dashboard profile selection works for all three apps.
 - [ ] Verify StreamSignal `Go Live` and `End Stream` actions work against a safe test profile.
-- [ ] Verify TideReader overlay preview renders local overlay data.
+- [ ] Verify StreamSignal announcement fields populate from the selected profile/status data, can be edited for one announcement, and reset when a different profile is selected.
+- [ ] Verify TideReader browser support can be toggled from LivePanel and browser-sourced now-playing data is hidden from the overlay preview while browser support is disabled.
+- [ ] Verify TideReader overlay preview renders local overlay data, honors Smart Text overflow modes, and treats a `0` character limit as unlimited.
+- [ ] Verify TuberSwitch shows only manageable redeems and redeem toggles use the manual/session path without saving profile changes.
+- [ ] Verify the top readiness bar shows OBS as offline/red unless StreamSignal reports a positive OBS connection state.
 - [ ] Verify Diagnostics shows SIP status, endpoints, capabilities, versions, and executable paths for compatible app versions.
 - [ ] Verify older non-SIP/service-mode app versions do not appear and are covered by README requirements.
 

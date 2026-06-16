@@ -157,6 +157,14 @@ function Get-TideReaderPublishDir([hashtable]$Spec) {
     return Join-Path $Spec.Mirror "artifacts\publish\win-x64-livepanel-dev"
 }
 
+function Get-TideReaderExecutablePath([string]$RunDirectory) {
+    $current = Join-Path $RunDirectory "TideReader.exe"
+    if (Test-Path $current) {
+        return $current
+    }
+    return Join-Path $RunDirectory "TideReader.Desktop.exe"
+}
+
 function Stop-ProcessByName([string]$Name) {
     $processes = Get-Process -Name $Name -ErrorAction SilentlyContinue
     if ($null -eq $processes) {
@@ -255,6 +263,7 @@ if ($Launch) {
     Invoke-Step "Stop stale app processes" {
         Stop-ProcessByName "LivePanel"
         Stop-ProcessByName "StreamSignal"
+        Stop-ProcessByName "TideReader"
         Stop-ProcessByName "TideReader.Desktop"
         Stop-ProcessByName "TuberSwitch"
     }
@@ -292,7 +301,7 @@ foreach ($app in $KnownApps) {
 if ($Launch) {
     $livePanelExe = Join-Path $specs.livepanel.Run "LivePanel.exe"
     $streamSignalExe = Join-Path $specs.streamsignal.Run "StreamSignal.exe"
-    $tideReaderExe = Join-Path $specs.tidereader.Run "TideReader.Desktop.exe"
+    $tideReaderExe = Get-TideReaderExecutablePath $specs.tidereader.Run
     $tuberSwitchExe = Join-Path $specs.tuberswitch.Run "TuberSwitch.exe"
 
     foreach ($exe in @($livePanelExe, $streamSignalExe, $tideReaderExe, $tuberSwitchExe)) {

@@ -14,8 +14,12 @@ export function ActivateTuberSwitchProfile(arg1) {
   return window['go']['main']['App']['ActivateTuberSwitchProfile'](arg1);
 }
 
-export function AnnounceStreamSignal() {
-  return window['go']['main']['App']['AnnounceStreamSignal']();
+export function ApplyTuberSwitchRedeemsManual(arg1) {
+  return window['go']['main']['App']['ApplyTuberSwitchRedeemsManual'](arg1);
+}
+
+export function AnnounceStreamSignal(arg1) {
+  return window['go']['main']['App']['AnnounceStreamSignal'](arg1);
 }
 
 export function ClearModuleExecutablePath(arg1) {
@@ -46,6 +50,10 @@ export function GetStreamSignalAnnounceStatus() {
   return window['go']['main']['App']['GetStreamSignalAnnounceStatus']();
 }
 
+export function GetStreamSignalAnnouncementFields() {
+  return window['go']['main']['App']['GetStreamSignalAnnouncementFields']();
+}
+
 export function GetStreamSignalCurrentProfile() {
   return window['go']['main']['App']['GetStreamSignalCurrentProfile']();
 }
@@ -56,6 +64,10 @@ export function GetStreamSignalEndStreamStatus() {
 
 export function GetStreamSignalProfiles() {
   return window['go']['main']['App']['GetStreamSignalProfiles']();
+}
+
+export function GetTideReaderBrowserSupport() {
+  return window['go']['main']['App']['GetTideReaderBrowserSupport']();
 }
 
 export function GetTideReaderCurrentProfile() {
@@ -78,6 +90,10 @@ export function GetTuberSwitchProfiles() {
   return window['go']['main']['App']['GetTuberSwitchProfiles']();
 }
 
+export function GetTuberSwitchRedeems() {
+  return window['go']['main']['App']['GetTuberSwitchRedeems']();
+}
+
 export function OpenModule(arg1) {
   return window['go']['main']['App']['OpenModule'](arg1);
 }
@@ -98,6 +114,18 @@ export function SetModuleExecutablePath(arg1, arg2) {
   return window['go']['main']['App']['SetModuleExecutablePath'](arg1, arg2);
 }
 
+export function SetTideReaderBrowserSupport(arg1) {
+  return window['go']['main']['App']['SetTideReaderBrowserSupport'](arg1);
+}
+
+export function SetTuberSwitchRedeems(arg1) {
+  return window['go']['main']['App']['SetTuberSwitchRedeems'](arg1);
+}
+
 export function StartModule(arg1) {
   return window['go']['main']['App']['StartModule'](arg1);
+}
+
+export function UpdateStreamSignalAnnouncementFields(arg1) {
+  return window['go']['main']['App']['UpdateStreamSignalAnnouncementFields'](arg1);
 }
