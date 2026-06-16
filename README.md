@@ -12,9 +12,9 @@ LivePanel v0.2.0 requires SIP and service-mode compliant versions of the depende
 
 | App | Minimum Version |
 | --- | --- |
-| StreamSignal | v0.5.1 |
-| TideReader | v0.6.0 |
-| TuberSwitch | v0.7.1 |
+| StreamSignal | v0.5.1 or newer |
+| TideReader | v0.6.0 or newer |
+| TuberSwitch | v0.7.1 or newer |
 
 Update this table for each LivePanel release. Historical per-release requirements are tracked in [APP_COMPATIBILITY.md](./APP_COMPATIBILITY.md), and the matching release notes should repeat the requirements for that release.
 
