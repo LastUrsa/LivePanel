@@ -326,6 +326,16 @@ function booleanValue(record: Record<string, unknown>, key: string, fallback: bo
   return typeof value === 'boolean' ? value : fallback;
 }
 
+function firstStatusText(status: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = statusValue(status, key);
+    if (value) {
+      return value;
+    }
+  }
+  return '';
+}
+
 function truncateText(value: string, maxCharacters: number) {
   if (maxCharacters <= 0) {
     return value;
@@ -489,8 +499,14 @@ function tuberSwitchOBSLabel(status: Record<string, unknown>) {
 }
 
 function streamSignalOBSReadiness(status: Record<string, unknown>): { value: string; tone: 'running' | 'warning' | 'offline' } {
-  const value = statusValue(status, 'obsStatus');
+  const obs = recordValue(status, 'obs');
+  const value =
+    firstStatusText(status, ['obsStatus', 'obsSummary', 'obsState', 'obsConnectionStatus']) ||
+    firstStatusText(obs, ['status', 'summary', 'state', 'connectionStatus', 'message']);
   if (!value) {
+    if (booleanValue(status, 'obsConnected', false) || booleanValue(obs, 'connected', false)) {
+      return { value: 'Connected', tone: 'running' };
+    }
     return { value: 'Offline', tone: 'offline' };
   }
   const normalized = value.toLowerCase();
@@ -502,6 +518,9 @@ function streamSignalOBSReadiness(status: Record<string, unknown>): { value: str
     normalized.includes('missing');
   if (offline) {
     return { value, tone: 'offline' };
+  }
+  if (booleanValue(status, 'obsConnected', false) || booleanValue(obs, 'connected', false)) {
+    return { value, tone: 'running' };
   }
   const connected =
     normalized.includes('connected') ||
@@ -1897,6 +1916,7 @@ export default function App() {
   const streamSignalProfileKeyRef = useRef('');
   const tuberSwitchRedeemsDirtyRef = useRef(false);
   const tuberSwitchProfileKeyRef = useRef('');
+  const tuberSwitchRequestedProfileRef = useRef<CurrentProfile | null>(null);
   const tuberSwitchRedeemOverridesRef = useRef<Record<string, boolean>>({});
   const tuberSwitchRedeemBaselineRef = useRef<Record<string, boolean>>({});
 
@@ -2030,6 +2050,7 @@ export default function App() {
       clearTuberSwitchRedeemOverrides();
       tuberSwitchRedeemBaselineRef.current = {};
       tuberSwitchProfileKeyRef.current = '';
+      tuberSwitchRequestedProfileRef.current = null;
       return;
     }
     try {
@@ -2042,12 +2063,21 @@ export default function App() {
         getTuberSwitchCurrentProfile(),
         redeemsRequest,
       ]);
-      const nextProfileKey = nextCurrentProfile.id || nextCurrentProfile.name;
+      const requestedProfile = tuberSwitchRequestedProfileRef.current;
+      const requestConfirmed = Boolean(
+        requestedProfile &&
+          ((requestedProfile.id && requestedProfile.id === nextCurrentProfile.id) || (requestedProfile.name && requestedProfile.name === nextCurrentProfile.name)),
+      );
+      if (requestConfirmed) {
+        tuberSwitchRequestedProfileRef.current = null;
+      }
+      const effectiveCurrentProfile = requestedProfile && !requestConfirmed ? requestedProfile : nextCurrentProfile;
+      const nextProfileKey = effectiveCurrentProfile.id || effectiveCurrentProfile.name;
       const previousProfileKey = tuberSwitchProfileKeyRef.current;
       const profileChanged = Boolean(previousProfileKey && nextProfileKey && previousProfileKey !== nextProfileKey);
       setTuberSwitchProfiles(nextProfiles);
-      setTuberSwitchCurrentProfile(nextCurrentProfile);
-      setTuberSwitchSelectedProfile((current) => nextCurrentProfile.name || (nextProfiles.includes(current) ? current : ''));
+      setTuberSwitchCurrentProfile(effectiveCurrentProfile);
+      setTuberSwitchSelectedProfile((current) => effectiveCurrentProfile.name || (nextProfiles.includes(current) ? current : ''));
       if (profileChanged) {
         clearTuberSwitchRedeemOverrides();
       }
@@ -2070,6 +2100,7 @@ export default function App() {
       clearTuberSwitchRedeemOverrides();
       tuberSwitchRedeemBaselineRef.current = {};
       tuberSwitchProfileKeyRef.current = '';
+      tuberSwitchRequestedProfileRef.current = null;
     }
   }
 
@@ -2315,10 +2346,13 @@ export default function App() {
         setWorkflowBusy(true);
         const activated = await activateTuberSwitchProfile(profile);
         if (activated.success) {
-          setTuberSwitchCurrentProfile({ id: activated.profileId || '', name: activated.profile || profile });
+          const nextProfile = { id: activated.profileId || '', name: activated.profile || profile };
+          tuberSwitchRequestedProfileRef.current = nextProfile;
+          setTuberSwitchCurrentProfile(nextProfile);
           clearTuberSwitchRedeemOverrides();
           await load(true);
         } else {
+          tuberSwitchRequestedProfileRef.current = null;
           setTuberSwitchProfileError(activated.error || 'Profile activation failed.');
         }
         setWorkflowBusy(false);
