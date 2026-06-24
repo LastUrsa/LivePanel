@@ -24,13 +24,13 @@ This maintainer checklist is for LivePanel release candidates, packaging, and fi
 
 - [ ] Verify LivePanel starts StreamSignal, TideReader, and TuberSwitch in service mode.
 - [ ] Verify each app can be opened with the full UI from LivePanel.
-- [ ] Verify Dashboard profile selection works for all three apps.
+- [ ] Verify Dashboard profile selection works for all three apps and TuberSwitch does not fall back to the previous/default profile after selection.
 - [ ] Verify StreamSignal `Go Live` and `End Stream` actions work against a safe test profile.
 - [ ] Verify StreamSignal announcement fields populate from the selected profile/status data, can be edited for one announcement, and reset when a different profile is selected.
 - [ ] Verify TideReader browser support can be toggled from LivePanel and browser-sourced now-playing data is hidden from the overlay preview while browser support is disabled.
 - [ ] Verify TideReader overlay preview renders local overlay data, honors Smart Text overflow modes, and treats a `0` character limit as unlimited.
 - [ ] Verify TuberSwitch shows only manageable redeems and redeem toggles use the manual/session path without saving profile changes.
-- [ ] Verify the top readiness bar shows OBS as offline/red unless StreamSignal reports a positive OBS connection state.
+- [ ] Verify the top readiness bar shows OBS as offline/red unless StreamSignal reports a positive OBS connection state, including boolean and nested OBS status payloads.
 - [ ] Verify Diagnostics shows SIP status, endpoints, capabilities, versions, and executable paths for compatible app versions.
 - [ ] Verify older non-SIP/service-mode app versions do not appear and are covered by README requirements.
 

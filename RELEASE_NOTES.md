@@ -13,6 +13,8 @@ Release notes are part of the LivePanel release process. Before publishing a rel
 - Adds main-screen indicators for temporary `Manual edit` overrides and TideReader `Browser Support On` state.
 - Makes the app details drawer resizable and updates drawer headings to describe app-owned data instead of implying every value is profile-owned.
 - Makes OBS readiness conservative: missing, offline, disconnected, or not-connected OBS status is shown as offline with the design-system danger color.
+- Recognizes StreamSignal OBS readiness from `obsConnected`, summary/state fields, and nested OBS status payloads so LivePanel updates when OBS connects.
+- Keeps a newly selected TuberSwitch profile active in LivePanel while SIP status catches up, avoiding fallback to the previous/default profile after activation.
 
 ### App Requirements
 
@@ -24,6 +26,7 @@ Release notes are part of the LivePanel release process. Before publishing a rel
 
 - Keeps new manual-control traffic on local SIP endpoints only.
 - Does not store StreamSignal announcement drafts, TideReader profile data, or TuberSwitch redeem/session changes in LivePanel.
+- Updates frontend audit dependencies so `npm audit --audit-level=moderate` reports no vulnerabilities.
 - Release validation includes frontend tests/build, Go tests, Go race tests, frontend dependency audit, and `govulncheck`.
 
 ## v0.1.0

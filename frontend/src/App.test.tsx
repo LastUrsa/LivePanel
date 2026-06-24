@@ -978,6 +978,22 @@ describe('App workflows', () => {
     expect(within(obsItem as HTMLElement).queryByText('Connected')).not.toBeInTheDocument();
   });
 
+  it('shows OBS connected from boolean StreamSignal status', async () => {
+    vi.mocked(api.refreshModules).mockResolvedValue([
+      moduleFixture({ status: { state: 'idle', message: 'Ready', obsConnected: true } }),
+      tideReaderModuleFixture(),
+      tuberSwitchModuleFixture(),
+    ]);
+
+    render(<App />);
+
+    const readiness = await screen.findByLabelText('Stream readiness');
+    const obsItem = within(readiness).getByText('OBS').closest('article');
+    expect(obsItem).not.toBeNull();
+    expect(obsItem).toHaveClass('readiness-running');
+    expect(within(obsItem as HTMLElement).getByText('Connected')).toBeInTheDocument();
+  });
+
   it('starts installed offline modules when auto-start is enabled', async () => {
     vi.mocked(api.refreshModules).mockResolvedValue([
       moduleFixture({
@@ -1089,6 +1105,20 @@ describe('App workflows', () => {
     await user.selectOptions((await screen.findAllByLabelText(/Profile/i))[2], 'Just Chatting');
 
     await waitFor(() => expect(api.activateTuberSwitchProfile).toHaveBeenCalledWith('Just Chatting'));
+  });
+
+  it('keeps a successfully activated TuberSwitch profile selected while SIP status catches up', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.getTuberSwitchCurrentProfile).mockResolvedValue({ id: 'gaming', name: 'Gaming Stream' });
+
+    render(<App />);
+
+    const profileSelect = (await screen.findAllByLabelText(/Profile/i))[2];
+    await user.selectOptions(profileSelect, 'Just Chatting');
+
+    await waitFor(() => expect(api.activateTuberSwitchProfile).toHaveBeenCalledWith('Just Chatting'));
+    await waitFor(() => expect(profileSelect).toHaveValue('Just Chatting'));
+    expect(screen.getAllByText('Just Chatting (3D)').length).toBeGreaterThan(0);
   });
 
   it('keeps manual TuberSwitch redeem toggle state when the service rereads profile values', async () => {
