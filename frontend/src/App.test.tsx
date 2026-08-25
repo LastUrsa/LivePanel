@@ -967,7 +967,13 @@ describe('App workflows', () => {
     expect(api.getTuberSwitchCurrentProfile).toHaveBeenCalledTimes(1);
   });
 
-  it('shows OBS offline when StreamSignal omits OBS status', async () => {
+  it('shows OBS offline when no module reports OBS status', async () => {
+    vi.mocked(api.refreshModules).mockResolvedValue([
+      moduleFixture({ status: { state: 'idle', message: 'Ready' } }),
+      tideReaderModuleFixture(),
+      tuberSwitchModuleFixture({ status: { state: 'ready', message: 'Profile active' } }),
+    ]);
+
     render(<App />);
 
     const readiness = await screen.findByLabelText('Stream readiness');
@@ -978,11 +984,11 @@ describe('App workflows', () => {
     expect(within(obsItem as HTMLElement).queryByText('Connected')).not.toBeInTheDocument();
   });
 
-  it('shows OBS connected from boolean StreamSignal status', async () => {
+  it('shows OBS connected from TuberSwitch status', async () => {
     vi.mocked(api.refreshModules).mockResolvedValue([
-      moduleFixture({ status: { state: 'idle', message: 'Ready', obsConnected: true } }),
+      moduleFixture({ status: { state: 'idle', message: 'Ready' } }),
       tideReaderModuleFixture(),
-      tuberSwitchModuleFixture(),
+      tuberSwitchModuleFixture({ status: { state: 'ready', message: 'Profile active', obsConnected: true, obsSummary: 'Connected: Gaming / VTuber' } }),
     ]);
 
     render(<App />);
@@ -991,7 +997,7 @@ describe('App workflows', () => {
     const obsItem = within(readiness).getByText('OBS').closest('article');
     expect(obsItem).not.toBeNull();
     expect(obsItem).toHaveClass('readiness-running');
-    expect(within(obsItem as HTMLElement).getByText('Connected')).toBeInTheDocument();
+    expect(within(obsItem as HTMLElement).getByText('Connected: Gaming / VTuber')).toBeInTheDocument();
   });
 
   it('starts installed offline modules when auto-start is enabled', async () => {
@@ -1119,6 +1125,48 @@ describe('App workflows', () => {
     await waitFor(() => expect(api.activateTuberSwitchProfile).toHaveBeenCalledWith('Just Chatting'));
     await waitFor(() => expect(profileSelect).toHaveValue('Just Chatting'));
     expect(screen.getAllByText('Just Chatting (3D)').length).toBeGreaterThan(0);
+  });
+
+  it('rolls back an unconfirmed TuberSwitch profile after bounded refresh attempts', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.getTuberSwitchCurrentProfile).mockResolvedValue({ id: 'gaming', name: 'Gaming Stream' });
+
+    render(<App />);
+
+    const profileSelect = (await screen.findAllByLabelText(/Profile/i))[2];
+    await user.selectOptions(profileSelect, 'Just Chatting');
+    await waitFor(() => expect(profileSelect).toHaveValue('Just Chatting'));
+
+    const refresh = screen.getByRole('button', { name: 'Refresh modules' });
+    for (const expectedCalls of [3, 4, 5]) {
+      await user.click(refresh);
+      await waitFor(() => expect(api.getTuberSwitchCurrentProfile).toHaveBeenCalledTimes(expectedCalls));
+    }
+
+    await waitFor(() => expect(profileSelect).toHaveValue('Gaming Stream'));
+    expect(screen.getByText('TuberSwitch did not confirm the requested profile "Just Chatting".')).toBeInTheDocument();
+  });
+
+  it('refreshes partially changed TuberSwitch state while preserving activation errors', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.activateTuberSwitchProfile).mockResolvedValue({ success: false, error: 'OBS: Old Scene / Avatar: access denied' });
+
+    render(<App />);
+
+    const profileSelect = (await screen.findAllByLabelText(/Profile/i))[2];
+    await user.selectOptions(profileSelect, 'Just Chatting');
+
+    await waitFor(() => expect(api.refreshModules).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('OBS: Old Scene / Avatar: access denied')).toBeInTheDocument();
+  });
+
+  it('keeps known TuberSwitch state and reports redeem refresh failures', async () => {
+    vi.mocked(api.getTuberSwitchRedeems).mockRejectedValue(new Error('service unavailable'));
+
+    render(<App />);
+
+    expect(await screen.findByText('Unable to refresh TuberSwitch redeems: service unavailable')).toBeInTheDocument();
+    expect((await screen.findAllByDisplayValue('Gaming Stream')).length).toBeGreaterThan(0);
   });
 
   it('keeps manual TuberSwitch redeem toggle state when the service rereads profile values', async () => {

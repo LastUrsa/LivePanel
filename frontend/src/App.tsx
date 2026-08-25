@@ -147,6 +147,11 @@ type TideReaderWorkflow = {
   onToggleRedeem?: (id: string, enabled: boolean) => void;
 };
 
+type PendingTuberSwitchProfile = {
+  profile: CurrentProfile;
+  remainingRefreshes: number;
+};
+
 type ProfilePreviewTarget = 'streamsignal' | 'tidereader' | 'tuberswitch';
 
 const emptyTideReaderOverlay: TideReaderOverlaySnapshot = {
@@ -498,7 +503,7 @@ function tuberSwitchOBSLabel(status: Record<string, unknown>) {
   return booleanValue(status, 'obsConnected', false) ? 'Connected' : 'Not connected';
 }
 
-function streamSignalOBSReadiness(status: Record<string, unknown>): { value: string; tone: 'running' | 'warning' | 'offline' } {
+function obsStatusReadiness(status: Record<string, unknown>): { value: string; tone: 'running' | 'warning' | 'offline' } {
   const obs = recordValue(status, 'obs');
   const value =
     firstStatusText(status, ['obsStatus', 'obsSummary', 'obsState', 'obsConnectionStatus']) ||
@@ -528,6 +533,19 @@ function streamSignalOBSReadiness(status: Record<string, unknown>): { value: str
     normalized.includes('running') ||
     normalized.includes('available');
   return { value, tone: connected ? 'running' : 'warning' };
+}
+
+function obsReadiness(modules: ModuleInfo[]) {
+  const statuses = [tuberSwitchModule(modules)?.status, streamSignalModule(modules)?.status].filter(
+    (status): status is Record<string, unknown> => Boolean(status),
+  );
+  const readiness = statuses.map(obsStatusReadiness);
+  return (
+    readiness.find((item) => item.tone === 'running') ??
+    readiness.find((item) => item.tone === 'warning') ??
+    readiness.find((item) => item.value !== 'Offline') ??
+    { value: 'Offline', tone: 'offline' as const }
+  );
 }
 
 function tideReaderLayoutLabel(status: Record<string, unknown>, settings: Record<string, unknown>) {
@@ -883,11 +901,11 @@ function ReadinessItem({ icon, label, value, tone }: { icon: 'modules' | 'obs' |
 function TopbarReadiness({ modules }: { modules: ModuleInfo[] }) {
   const streamSignal = streamSignalModule(modules);
   const onlineCount = onlineModuleCount(modules);
-  const obsReadiness = streamSignalOBSReadiness(streamSignal?.status ?? {});
+  const currentOBSReadiness = obsReadiness(modules);
   return (
     <div className="topbar-readiness" aria-label="Stream readiness">
       <ReadinessItem icon="modules" label="Modules" value={`${onlineCount} / 3`} tone={onlineCount === 3 ? 'running' : 'warning'} />
-      <ReadinessItem icon="obs" label="OBS" value={obsReadiness.value} tone={obsReadiness.tone} />
+      <ReadinessItem icon="obs" label="OBS" value={currentOBSReadiness.value} tone={currentOBSReadiness.tone} />
       <ReadinessItem icon="internet" label="Internet" value={statusValue(streamSignal?.status ?? {}, 'internetStatus') || 'Stable'} tone="running" />
       <ReadinessItem icon="twitch" label="Twitch" value={statusValue(streamSignal?.status ?? {}, 'twitchStatus') || 'Connected'} tone="running" />
     </div>
@@ -1203,6 +1221,7 @@ function RedeemList({ workflow, status }: { workflow: TideReaderWorkflow; status
         <span>Redeems</span>
         {redeems.length > 0 ? <StatusPill label={`${redeems.length}`} tone="info" /> : null}
       </div>
+      {workflow.hasSessionChanges ? <p className="drawer-empty-line">Temporary overrides are active for this session and reset when the profile changes.</p> : null}
       {redeems.length === 0 ? (
         <p className="drawer-empty-line">{tuberSwitchRedeemLabel(status)}</p>
       ) : (
@@ -1916,7 +1935,7 @@ export default function App() {
   const streamSignalProfileKeyRef = useRef('');
   const tuberSwitchRedeemsDirtyRef = useRef(false);
   const tuberSwitchProfileKeyRef = useRef('');
-  const tuberSwitchRequestedProfileRef = useRef<CurrentProfile | null>(null);
+  const tuberSwitchRequestedProfileRef = useRef<PendingTuberSwitchProfile | null>(null);
   const tuberSwitchRedeemOverridesRef = useRef<Record<string, boolean>>({});
   const tuberSwitchRedeemBaselineRef = useRef<Record<string, boolean>>({});
 
@@ -2054,16 +2073,23 @@ export default function App() {
       return;
     }
     try {
-      const redeemsRequest =
-        hasCapability(module, 'redeems') || hasStatusKey(module.status, 'redeemCount')
-          ? getTuberSwitchRedeems().catch(() => [] as Redeem[])
-          : Promise.resolve([] as Redeem[]);
-      const [nextProfiles, nextCurrentProfile, nextRedeems] = await Promise.all([
-        getTuberSwitchProfiles(),
-        getTuberSwitchCurrentProfile(),
-        redeemsRequest,
-      ]);
-      const requestedProfile = tuberSwitchRequestedProfileRef.current;
+      const [nextProfiles, nextCurrentProfile] = await Promise.all([getTuberSwitchProfiles(), getTuberSwitchCurrentProfile()]);
+      let nextRedeems: Redeem[] = [];
+      let redeemsLoaded = false;
+      let refreshError = '';
+      if (hasCapability(module, 'redeems') || hasStatusKey(module.status, 'redeemCount')) {
+        try {
+          nextRedeems = await getTuberSwitchRedeems();
+          redeemsLoaded = true;
+        } catch (error) {
+          refreshError = error instanceof Error && error.message ? `Unable to refresh TuberSwitch redeems: ${error.message}` : 'Unable to refresh TuberSwitch redeems.';
+        }
+      } else {
+        nextRedeems = [];
+        redeemsLoaded = true;
+      }
+      const pendingProfile = tuberSwitchRequestedProfileRef.current;
+      const requestedProfile = pendingProfile?.profile;
       const requestConfirmed = Boolean(
         requestedProfile &&
           ((requestedProfile.id && requestedProfile.id === nextCurrentProfile.id) || (requestedProfile.name && requestedProfile.name === nextCurrentProfile.name)),
@@ -2071,7 +2097,16 @@ export default function App() {
       if (requestConfirmed) {
         tuberSwitchRequestedProfileRef.current = null;
       }
-      const effectiveCurrentProfile = requestedProfile && !requestConfirmed ? requestedProfile : nextCurrentProfile;
+      const keepRequestedProfile = Boolean(requestedProfile && !requestConfirmed && (pendingProfile?.remainingRefreshes ?? 0) > 0);
+      if (pendingProfile && !requestConfirmed) {
+        if (keepRequestedProfile) {
+          tuberSwitchRequestedProfileRef.current = { ...pendingProfile, remainingRefreshes: pendingProfile.remainingRefreshes - 1 };
+        } else {
+          tuberSwitchRequestedProfileRef.current = null;
+          refreshError = `TuberSwitch did not confirm the requested profile "${requestedProfile?.name || 'Unknown'}".`;
+        }
+      }
+      const effectiveCurrentProfile = keepRequestedProfile && requestedProfile ? requestedProfile : nextCurrentProfile;
       const nextProfileKey = effectiveCurrentProfile.id || effectiveCurrentProfile.name;
       const previousProfileKey = tuberSwitchProfileKeyRef.current;
       const profileChanged = Boolean(previousProfileKey && nextProfileKey && previousProfileKey !== nextProfileKey);
@@ -2081,26 +2116,20 @@ export default function App() {
       if (profileChanged) {
         clearTuberSwitchRedeemOverrides();
       }
-      if (!tuberSwitchRedeemsDirtyRef.current || profileChanged) {
+      if (redeemsLoaded && (!tuberSwitchRedeemsDirtyRef.current || profileChanged)) {
         tuberSwitchRedeemBaselineRef.current = nextRedeems.reduce<Record<string, boolean>>((baseline, redeem) => {
           baseline[redeem.id] = redeem.enabled;
           return baseline;
         }, {});
       }
-      const overrides = tuberSwitchRedeemOverridesRef.current;
-      setTuberSwitchRedeems(nextRedeems.map((redeem) => (Object.prototype.hasOwnProperty.call(overrides, redeem.id) ? { ...redeem, enabled: overrides[redeem.id] } : redeem)));
+      if (redeemsLoaded) {
+        const overrides = tuberSwitchRedeemOverridesRef.current;
+        setTuberSwitchRedeems(nextRedeems.map((redeem) => (Object.prototype.hasOwnProperty.call(overrides, redeem.id) ? { ...redeem, enabled: overrides[redeem.id] } : redeem)));
+      }
       tuberSwitchProfileKeyRef.current = nextProfileKey;
+      setTuberSwitchProfileError(refreshError);
     } catch {
-      const empty = emptyProfileWorkflowState();
-      setTuberSwitchProfiles(empty.profiles);
-      setTuberSwitchCurrentProfile(empty.currentProfile);
-      setTuberSwitchSelectedProfile('');
-      setTuberSwitchRedeems([]);
-      setPendingTuberSwitchRedeemIds([]);
-      clearTuberSwitchRedeemOverrides();
-      tuberSwitchRedeemBaselineRef.current = {};
-      tuberSwitchProfileKeyRef.current = '';
-      tuberSwitchRequestedProfileRef.current = null;
+      setTuberSwitchProfileError('Unable to refresh TuberSwitch profile data. The last known state is still displayed.');
     }
   }
 
@@ -2347,13 +2376,14 @@ export default function App() {
         const activated = await activateTuberSwitchProfile(profile);
         if (activated.success) {
           const nextProfile = { id: activated.profileId || '', name: activated.profile || profile };
-          tuberSwitchRequestedProfileRef.current = nextProfile;
+          tuberSwitchRequestedProfileRef.current = { profile: nextProfile, remainingRefreshes: 3 };
           setTuberSwitchCurrentProfile(nextProfile);
           clearTuberSwitchRedeemOverrides();
           await load(true);
         } else {
           tuberSwitchRequestedProfileRef.current = null;
-          setTuberSwitchProfileError(activated.error || 'Profile activation failed.');
+          await load(true);
+          setTuberSwitchProfileError(activated.error || 'Profile activation failed. TuberSwitch runtime state was refreshed.');
         }
         setWorkflowBusy(false);
       })();
