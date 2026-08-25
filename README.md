@@ -8,13 +8,13 @@ Today, LivePanel can start StreamSignal, TideReader, and TuberSwitch in service 
 
 ## App Requirements
 
-LivePanel v0.2.0 requires SIP and service-mode compliant versions of the dependent Starsong apps listed below. Earlier versions are not expected to appear in LivePanel Diagnostics or may not expose the controls required by this LivePanel release.
+LivePanel v0.2.1 requires SIP and service-mode compliant versions of the dependent Starsong apps listed below. Earlier versions are not expected to appear in LivePanel Diagnostics or may not expose the controls required by this LivePanel release.
 
 | App | Minimum Version |
 | --- | --- |
 | StreamSignal | v0.5.1 or newer |
 | TideReader | v0.6.0 or newer |
-| TuberSwitch | v0.7.1 or newer |
+| TuberSwitch | v0.7.2 or newer |
 
 Update this table for each LivePanel release. Historical per-release requirements are tracked in [APP_COMPATIBILITY.md](./APP_COMPATIBILITY.md), and the matching release notes should repeat the requirements for that release.
 
@@ -136,7 +136,7 @@ The app detail drawers use SIP capabilities and status payloads to decide which 
 
 ## Development
 
-Use Go `1.26.4` or newer. Earlier Go 1.26 patch releases include standard-library vulnerabilities reported by `govulncheck`.
+Use Go `1.26.6` or newer. Earlier Go 1.26 patch releases include standard-library vulnerabilities reported by `govulncheck`.
 
 Install frontend dependencies:
 
