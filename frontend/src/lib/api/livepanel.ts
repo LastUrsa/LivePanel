@@ -236,6 +236,9 @@ export function activateTuberSwitchProfile(profile: string): Promise<ProfileActi
 
 export async function getTuberSwitchRedeems(): Promise<Redeem[]> {
   const response = await GetTuberSwitchRedeems();
+  if (response.error) {
+    throw new Error(response.error);
+  }
   return response.redeems ?? [];
 }
 

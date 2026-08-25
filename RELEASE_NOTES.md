@@ -13,8 +13,10 @@ Release notes are part of the LivePanel release process. Before publishing a rel
 - Adds main-screen indicators for temporary `Manual edit` overrides and TideReader `Browser Support On` state.
 - Makes the app details drawer resizable and updates drawer headings to describe app-owned data instead of implying every value is profile-owned.
 - Makes OBS readiness conservative: missing, offline, disconnected, or not-connected OBS status is shown as offline with the design-system danger color.
-- Recognizes StreamSignal OBS readiness from `obsConnected`, summary/state fields, and nested OBS status payloads so LivePanel updates when OBS connects.
-- Keeps a newly selected TuberSwitch profile active in LivePanel while SIP status catches up, avoiding fallback to the previous/default profile after activation.
+- Reads OBS readiness from TuberSwitch, the app that owns the OBS WebSocket connection, while retaining compatibility with other module status payloads.
+- Keeps a newly selected TuberSwitch profile active while SIP status catches up, then rolls back with a visible error if TuberSwitch does not confirm it within bounded refresh attempts.
+- Refreshes TuberSwitch profile, OBS, and redeem state after both successful and partially failed activation, preserving item-specific SIP errors.
+- Preserves the last known TuberSwitch state when a refresh fails and labels manual redeem changes as temporary session overrides.
 
 ### App Requirements
 
@@ -27,6 +29,7 @@ Release notes are part of the LivePanel release process. Before publishing a rel
 - Keeps new manual-control traffic on local SIP endpoints only.
 - Does not store StreamSignal announcement drafts, TideReader profile data, or TuberSwitch redeem/session changes in LivePanel.
 - Updates frontend audit dependencies so `npm audit --audit-level=moderate` reports no vulnerabilities.
+- Requires Go 1.26.6 or newer to include current standard-library security fixes.
 - Release validation includes frontend tests/build, Go tests, Go race tests, frontend dependency audit, and `govulncheck`.
 
 ## v0.1.0
