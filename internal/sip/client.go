@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -19,9 +18,26 @@ var ErrInvalidResponse = errors.New("invalid SIP response")
 const maxResponseBytes = 1 << 20
 
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
+	baseURL         string
+	httpClient      *http.Client
+	observer        func(RequestEvent)
+	correlationID   func(context.Context) string
+	asyncPublishing bool
 }
+
+// RequestEvent contains metadata only; request/response bodies and URLs with
+// query strings are never passed to the logging observer.
+type RequestEvent struct {
+	Context                                               context.Context
+	Method, Path                                          string
+	Duration                                              time.Duration
+	Status                                                int
+	Err                                                   error
+	RequestID, OperationID, SessionID, ErrorCode, Outcome string
+	Results                                               []DestinationResult
+}
+
+func (c *Client) SetObserver(observer func(RequestEvent)) { c.observer = observer }
 
 func NewClient(baseURL string, timeout time.Duration) *Client {
 	if timeout <= 0 {
@@ -200,7 +216,7 @@ func (c *Client) Announce(ctx context.Context, fields []UpdateAnnouncementFieldR
 	var out AnnounceResponse
 	err := c.postWorkflow(ctx, "/api/v1/announce", AnnounceRequest{Fields: fields}, &out)
 	if err != nil {
-		return AnnounceResponse{}, err
+		return out, err
 	}
 	return out, nil
 }
@@ -209,7 +225,7 @@ func (c *Client) ConfirmAnnouncement(ctx context.Context, confirmationID string)
 	var out AnnounceResponse
 	err := c.postWorkflow(ctx, "/api/v1/announce/confirm", AnnounceConfirmRequest{ConfirmationID: confirmationID}, &out)
 	if err != nil {
-		return AnnounceResponse{}, err
+		return out, err
 	}
 	return out, nil
 }
@@ -227,7 +243,7 @@ func (c *Client) EndStream(ctx context.Context) (EndStreamResponse, error) {
 	var out EndStreamResponse
 	err := c.postWorkflow(ctx, "/api/v1/end-stream", map[string]any{}, &out)
 	if err != nil {
-		return EndStreamResponse{}, err
+		return out, err
 	}
 	return out, nil
 }
@@ -270,6 +286,8 @@ func (c *Client) FetchSnapshot(ctx context.Context) (Snapshot, error) {
 // Posting may involve multiple sequential network requests per destination. Keep
 // discovery/status requests fast without canceling an in-flight publishing workflow.
 func (c *Client) postWorkflow(ctx context.Context, path string, in any, out any) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
 	httpClient := *c.httpClient
 	httpClient.Timeout = 5 * time.Minute
 	workflowClient := *c
@@ -277,7 +295,16 @@ func (c *Client) postWorkflow(ctx context.Context, path string, in any, out any)
 	return workflowClient.post(ctx, path, in, out)
 }
 
-func (c *Client) post(ctx context.Context, path string, in any, out any) error {
+func (c *Client) post(ctx context.Context, path string, in any, out any) (err error) {
+	started := time.Now()
+	status := 0
+	requestID := c.requestID(ctx)
+	var metadata ResponseMetadata
+	defer func() {
+		if c.observer != nil {
+			c.observer(RequestEvent{Context: ctx, Method: "POST", Path: path, Duration: time.Since(started), Status: status, Err: err, RequestID: requestID, OperationID: metadata.OperationID, SessionID: metadata.SessionID, ErrorCode: metadata.ErrorCode, Outcome: operationOutcome(metadata), Results: metadataResults(metadata)})
+		}
+	}()
 	requestURL, err := url.JoinPath(c.baseURL, path)
 	if err != nil {
 		return err
@@ -291,30 +318,45 @@ func (c *Client) post(ctx context.Context, path string, in any, out any) error {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Request-ID", requestID)
 	req.Header.Set("Content-Type", "application/json")
+	if path == "/api/v1/announce" || path == "/api/v1/announce/confirm" || path == "/api/v1/end-stream" {
+		if c.asyncPublishing {
+			req.Header.Set("Idempotency-Key", requestID)
+			req.Header.Set("Prefer", "respond-async")
+		}
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	status = resp.StatusCode
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		var errorResponse ErrorResponse
-		if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&errorResponse); err == nil && strings.TrimSpace(errorResponse.Error) != "" {
-			return errors.New(errorResponse.Error)
-		}
-		return fmt.Errorf("%w: status %d", ErrInvalidResponse, resp.StatusCode)
+	metadata, err = decodeResponse(resp, out)
+	if err != nil {
+		return err
 	}
-
-	decoder := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes))
-	if err := decoder.Decode(out); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidResponse, err)
+	if resp.StatusCode == http.StatusAccepted {
+		if !c.asyncPublishing {
+			return fmt.Errorf("%w: unexpected asynchronous response", ErrInvalidResponse)
+		}
+		return c.awaitOperation(ctx, &metadata, out)
 	}
 	return nil
 }
 
-func (c *Client) get(ctx context.Context, path string, out any) error {
+func (c *Client) get(ctx context.Context, path string, out any) (err error) {
+	started := time.Now()
+	status := 0
+	requestID := c.requestID(ctx)
+	var metadata ResponseMetadata
+	defer func() {
+		if c.observer != nil {
+			c.observer(RequestEvent{Context: ctx, Method: "GET", Path: path, Duration: time.Since(started), Status: status, Err: err, RequestID: requestID, OperationID: metadata.OperationID, SessionID: metadata.SessionID, ErrorCode: metadata.ErrorCode, Outcome: operationOutcome(metadata), Results: metadataResults(metadata)})
+		}
+	}()
 	requestURL, err := url.JoinPath(c.baseURL, path)
 	if err != nil {
 		return err
@@ -324,24 +366,18 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Request-ID", requestID)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	status = resp.StatusCode
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		var errorResponse ErrorResponse
-		if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&errorResponse); err == nil && strings.TrimSpace(errorResponse.Error) != "" {
-			return errors.New(errorResponse.Error)
-		}
-		return fmt.Errorf("%w: status %d", ErrInvalidResponse, resp.StatusCode)
-	}
-
-	decoder := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes))
-	if err := decoder.Decode(out); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidResponse, err)
+	metadata, err = decodeResponse(resp, out)
+	if err != nil {
+		return err
 	}
 	return nil
 }

@@ -27,6 +27,9 @@ import {
   clearModuleExecutablePath,
   confirmStreamSignalAnnouncement,
   endStreamSignalStream,
+  openLogsFolder,
+  exportSessionLogs,
+  getSessionLogWarning,
   getAutoStartManagedModules,
   getModuleExecutableConfigs,
   getStreamSignalAnnounceStatus,
@@ -150,6 +153,8 @@ type TideReaderWorkflow = {
 type PendingTuberSwitchProfile = {
   profile: CurrentProfile;
   remainingRefreshes: number;
+ operationId?: string;
+ expiresAt?: number;
 };
 
 type ProfilePreviewTarget = 'streamsignal' | 'tidereader' | 'tuberswitch';
@@ -616,6 +621,14 @@ function streamSignalPlatformLabel(status: Record<string, unknown>) {
   return platforms.length > 0 ? platforms.map(formatStatusState).join(', ') : 'Not reported';
 }
 
+function mergeActivityStatus<T extends AnnounceStatus | EndStreamStatus>(current: T, next: T): T {
+  if (current.operationId && current.operationId === next.operationId && next.operation?.outcome !== 'running') return next;
+  const currentStart = Date.parse(current.operation?.startedAt ?? '');
+  const nextStart = Date.parse(next.operation?.startedAt ?? '');
+  if (!Number.isNaN(currentStart) && !Number.isNaN(nextStart)) return nextStart >= currentStart ? next : current;
+  return Date.parse(current.lastRun) > (Date.parse(next.lastRun) || 0) ? current : next;
+}
+
 function latestActivity(announceStatus: AnnounceStatus, endStreamStatus: EndStreamStatus) {
   const announceTime = Date.parse(announceStatus.lastRun || '');
   const endStreamTime = Date.parse(endStreamStatus.lastRun || '');
@@ -648,6 +661,16 @@ function ActivityCard({ title, status }: { title: string; status: AnnounceStatus
         tone={failed ? 'error' : !status.lastRun ? 'neutral' : 'running'}
       />
       <span>{formatRun(status.lastRun)}</span>
+      {status.results?.length ? (
+        <ul>
+          {status.results.map((result, index) => (
+            <li key={`${result.destinationId}:${result.phase}:${index}`}>
+              {result.platform}: {result.phase === 'live_now' && result.published === false ? (result.state === 'success' ? 'Live status updated' : 'Live status incomplete') : result.published === true ? 'Post published' : result.published === false ? 'Not published' : 'Publication unknown'}
+              {result.message ? ` — ${result.message}` : ''}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {failed && status.error ? (
         <p role="alert">{status.error}</p>
       ) : null}
@@ -1792,6 +1815,7 @@ export function DiagnosticsPage({
         </div>
       </div>
 
+      <SessionLogActions />
       <section className="settings-section" aria-labelledby="module-diagnostics-title">
         <div className="section-heading">
           <div>
@@ -1802,6 +1826,35 @@ export function DiagnosticsPage({
         <DiagnosticsContent modules={modules} onStart={onStart} onOpen={onOpen} onRefresh={onRefresh} />
       </section>
     </main>
+  );
+}
+
+function SessionLogActions() {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  async function run(action: 'open' | 'export') {
+    setBusy(true);
+    setMessage('');
+    setError('');
+    try {
+      if (action === 'open') await openLogsFolder();
+      else setMessage(await exportSessionLogs());
+    } catch {
+      setError(action === 'open' ? 'Unable to open the logs folder.' : 'Unable to export session logs. Choose another location and try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="settings-section" aria-label="Session logs">
+      <div className="module-actions">
+        <button type="button" disabled={busy} onClick={() => void run('open')}>Open Logs Folder</button>
+        <button type="button" disabled={busy} onClick={() => void run('export')}>Export Session Logs</button>
+      </div>
+      {message ? <p role="status">{message}</p> : null}
+      {error ? <p role="alert">{error}</p> : null}
+    </section>
   );
 }
 
@@ -1919,6 +1972,22 @@ function CapabilityList({ capabilities }: { capabilities: string[] }) {
 }
 
 export default function App() {
+  const [loggingWarning, setLoggingWarning] = useState('');
+  useEffect(() => {
+    let active = true;
+    const check = async () => {
+      try {
+        const warning = await getSessionLogWarning();
+        if (active) setLoggingWarning(warning);
+      } catch {
+        if (active) setLoggingWarning('Unable to check session logging. Troubleshooting logs may be incomplete.');
+      }
+    };
+    void check();
+    const interval = window.setInterval(() => void check(), 5000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, []);
+
   const [page, setPage] = useState<Page>('dashboard');
   const [modules, setModules] = useState<ModuleInfo[]>([]);
   const [profiles, setProfiles] = useState<string[]>([]);
@@ -2017,8 +2086,8 @@ export default function App() {
       announcementFieldBaselineRef.current = baselineDrafts;
       streamSignalProfileKeyRef.current = nextProfileKey;
       setSelectedProfile((current) => nextCurrentProfile.name || (nextProfiles.includes(current) ? current : ''));
-      setAnnounceStatus((current) => Date.parse(current.lastRun) > (Date.parse(nextAnnounceStatus.lastRun) || 0) ? current : nextAnnounceStatus);
-      setEndStreamStatus((current) => Date.parse(current.lastRun) > (Date.parse(nextEndStreamStatus.lastRun) || 0) ? current : nextEndStreamStatus);
+      setAnnounceStatus((current) => mergeActivityStatus(current, nextAnnounceStatus));
+      setEndStreamStatus((current) => mergeActivityStatus(current, nextEndStreamStatus));
     } catch {
       const empty = emptyWorkflowState();
       setProfiles(empty.profiles);
@@ -2106,12 +2175,15 @@ export default function App() {
       const requestedProfile = pendingProfile?.profile;
       const requestConfirmed = Boolean(
         requestedProfile &&
-          ((requestedProfile.id && requestedProfile.id === nextCurrentProfile.id) || (requestedProfile.name && requestedProfile.name === nextCurrentProfile.name)),
+          ((requestedProfile.id && requestedProfile.id === nextCurrentProfile.id) || (requestedProfile.name && requestedProfile.name === nextCurrentProfile.name)) &&
+          (!pendingProfile?.operationId || nextCurrentProfile.confirmedOperationId === pendingProfile.operationId),
       );
       if (requestConfirmed) {
         tuberSwitchRequestedProfileRef.current = null;
       }
-      const keepRequestedProfile = Boolean(requestedProfile && !requestConfirmed && (pendingProfile?.remainingRefreshes ?? 0) > 0);
+      const keepRequestedProfile = Boolean(requestedProfile && !requestConfirmed && (pendingProfile?.operationId
+        ? Date.now() < (pendingProfile.expiresAt ?? 0)
+        : (pendingProfile?.remainingRefreshes ?? 0) > 0));
       if (pendingProfile && !requestConfirmed) {
         if (keepRequestedProfile) {
           tuberSwitchRequestedProfileRef.current = { ...pendingProfile, remainingRefreshes: pendingProfile.remainingRefreshes - 1 };
@@ -2404,7 +2476,7 @@ export default function App() {
         const activated = await activateTuberSwitchProfile(profile);
         if (activated.success) {
           const nextProfile = { id: activated.profileId || '', name: activated.profile || profile };
-          tuberSwitchRequestedProfileRef.current = { profile: nextProfile, remainingRefreshes: 3 };
+          tuberSwitchRequestedProfileRef.current = { profile: nextProfile, remainingRefreshes: 3, operationId: activated.operationId, expiresAt: Date.now() + 30000 };
           setTuberSwitchCurrentProfile(nextProfile);
           clearTuberSwitchRedeemOverrides();
           await load(true);
@@ -2477,6 +2549,7 @@ export default function App() {
           </button>
         </header>
 
+        {loggingWarning ? <p className="logging-warning" role="alert">{loggingWarning}</p> : null}
         {page === 'dashboard' ? (
           <Dashboard
             modules={modules}

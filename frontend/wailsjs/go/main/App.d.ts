@@ -10,9 +10,9 @@ export function ActivateTideReaderProfile(arg1:string):Promise<sip.ProfileActiva
 
 export function ActivateTuberSwitchProfile(arg1:string):Promise<sip.ProfileActivationResponse>;
 
-export function ApplyTuberSwitchRedeemsManual(arg1:Array<sip.UpdateRedeemRequest>):Promise<sip.SuccessResponse>;
-
 export function AnnounceStreamSignal(arg1:Array<sip.UpdateAnnouncementFieldRequest>):Promise<sip.AnnounceResponse>;
+
+export function ApplyTuberSwitchRedeemsManual(arg1:Array<sip.UpdateRedeemRequest>):Promise<sip.SuccessResponse>;
 
 export function ClearModuleExecutablePath(arg1:string):Promise<Array<main.ModuleExecutableConfig>>;
 
@@ -20,11 +20,15 @@ export function ConfirmStreamSignalAnnouncement(arg1:string):Promise<sip.Announc
 
 export function EndStreamSignalStream():Promise<sip.EndStreamResponse>;
 
+export function ExportSessionLogs():Promise<string>;
+
 export function GetAutoStartManagedModules():Promise<boolean>;
 
 export function GetModuleExecutableConfigs():Promise<Array<main.ModuleExecutableConfig>>;
 
 export function GetModules():Promise<Array<modules.Module>>;
+
+export function GetSessionLogWarning():Promise<string>;
 
 export function GetStreamSignalAnnounceStatus():Promise<sip.AnnounceStatusResponse>;
 
@@ -49,6 +53,8 @@ export function GetTuberSwitchCurrentProfile():Promise<sip.CurrentProfileRespons
 export function GetTuberSwitchProfiles():Promise<sip.ProfilesResponse>;
 
 export function GetTuberSwitchRedeems():Promise<sip.RedeemsResponse>;
+
+export function OpenLogsFolder():Promise<void>;
 
 export function OpenModule(arg1:string):Promise<Array<modules.Module>>;
 

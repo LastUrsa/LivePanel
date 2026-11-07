@@ -71,6 +71,7 @@ type ProfilesResponse struct {
 }
 
 type CurrentProfileResponse struct {
+	ResponseMetadata
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }
@@ -95,6 +96,7 @@ type UpdateAnnouncementFieldsRequest struct {
 }
 
 type SuccessResponse struct {
+	ResponseMetadata
 	Success bool   `json:"success"`
 	Error   string `json:"error,omitempty"`
 }
@@ -134,6 +136,7 @@ type ActivateProfileRequest struct {
 }
 
 type ProfileActivationResponse struct {
+	ResponseMetadata
 	Success   bool   `json:"success"`
 	Profile   string `json:"profile,omitempty"`
 	ProfileID string `json:"profileId,omitempty"`
@@ -150,6 +153,7 @@ type AnnounceRequest struct {
 }
 
 type AnnounceResponse struct {
+	ResponseMetadata
 	Success              bool   `json:"success"`
 	RequiresConfirmation bool   `json:"requiresConfirmation,omitempty"`
 	ConfirmationID       string `json:"confirmationId,omitempty"`
@@ -157,6 +161,7 @@ type AnnounceResponse struct {
 }
 
 type AnnounceStatusResponse struct {
+	ResponseMetadata
 	LastRun              string `json:"lastRun"`
 	Success              bool   `json:"success"`
 	RequiresConfirmation bool   `json:"requiresConfirmation,omitempty"`
@@ -169,11 +174,13 @@ type AnnounceConfirmRequest struct {
 }
 
 type EndStreamResponse struct {
+	ResponseMetadata
 	Success bool   `json:"success"`
 	Error   string `json:"error,omitempty"`
 }
 
 type EndStreamStatusResponse struct {
+	ResponseMetadata
 	LastRun string `json:"lastRun"`
 	Success bool   `json:"success"`
 	Error   string `json:"error,omitempty"`

@@ -2026,3 +2026,11 @@ input:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+.logging-warning {
+  margin: 1rem 1.5rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  color: #f4c56b;
+}

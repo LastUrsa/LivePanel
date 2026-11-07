@@ -39,6 +39,10 @@ This maintainer checklist is for LivePanel release candidates, packaging, and fi
 - [ ] Verify Diagnostics shows SIP status, endpoints, capabilities, versions, and executable paths for compatible app versions.
 - [ ] Verify older non-SIP/service-mode app versions do not appear and are covered by README requirements.
 
+- [ ] Verify session logs survive restarts and capture returned/rejected actions, timeouts, and module/OBS changes without recording content or credentials.
+- [ ] Verify Diagnostics Open Logs Folder and Export Session Logs work on Windows, including export cancellation, overwrite, and locations containing spaces/non-ASCII characters.
+- [ ] Verify retained exports contain previous/current sessions and no unrelated files; log write failures show a warning while controls remain usable.
+
 ## Packaging And Release
 
 - [ ] Run the release workflow manually with `publish_release` disabled for the target version.

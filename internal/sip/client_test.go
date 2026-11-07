@@ -371,3 +371,79 @@ func TestPublishingWorkflowsOutliveDiscoveryTimeout(t *testing.T) {
 		t.Fatalf("workflow must respect caller cancellation: %v", err)
 	}
 }
+
+func TestAsyncPublishingUsesCorrelationAndPollsWithoutReposting(t *testing.T) {
+	var posts int
+	const id = "0123456789abcdef01234567"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/announce" {
+			posts++
+			if r.Header.Get("X-Request-ID") != "client-action" || r.Header.Get("Idempotency-Key") != "client-action" || r.Header.Get("Prefer") != "respond-async" {
+				t.Error("missing publishing headers")
+			}
+			w.WriteHeader(202)
+			io.WriteString(w, `{"operationId":"`+id+`","operation":{"id":"`+id+`","outcome":"running"}}`)
+			return
+		}
+		if r.URL.Path != "/api/v1/operations/"+id {
+			t.Errorf("unexpected poll path %s", r.URL.Path)
+		}
+		io.WriteString(w, `{"operationId":"`+id+`","operation":{"id":"`+id+`","outcome":"partial","errorCode":"FOLLOW_UP_FAILED","message":"Publication succeeded but follow-up work failed.","results":[{"destinationId":"bsky","platform":"bluesky","state":"failed","phase":"live_now","published":true}]}}`)
+	}))
+	defer server.Close()
+	client := NewClient(server.URL, time.Second)
+	client.SetAsyncPublishing(true)
+	client.SetCorrelationIDProvider(func(context.Context) string { return "client-action" })
+	response, err := client.Announce(context.Background(), nil)
+	if err != nil || response.Success || response.OperationID != id || len(response.Results) != 1 || response.Results[0].Published == nil || !*response.Results[0].Published {
+		t.Fatalf("incorrect async result: %+v %v", response, err)
+	}
+	if posts != 1 {
+		t.Fatal("polling repeated a publishing request")
+	}
+}
+
+func TestAsyncPollingHonorsCancellationAndRejectsUnsafeIDs(t *testing.T) {
+	for _, id := range []string{"0123456789abcdef01234567", "../../private"} {
+		t.Run(id, func(t *testing.T) {
+			var posts int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				posts++
+				w.WriteHeader(202)
+				io.WriteString(w, `{"operationId":"`+id+`","operation":{"id":"`+id+`","outcome":"running"}}`)
+			}))
+			defer server.Close()
+			client := NewClient(server.URL, time.Second)
+			client.SetAsyncPublishing(true)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+			defer cancel()
+			response, err := client.Announce(ctx, nil)
+			if id == "0123456789abcdef01234567" && response.OperationID != id {
+				t.Fatal("polling failure discarded its operation ID")
+			}
+			if err == nil {
+				t.Fatal("expected a bounded cancellation or invalid operation ID")
+			}
+			if posts != 1 {
+				t.Fatal("cancellation or unsafe IDs must not reissue requests")
+			}
+		})
+	}
+}
+
+func TestLegacyPublishingDoesNotClaimUnsupportedIdempotency(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Idempotency-Key") != "" || r.Header.Get("Prefer") != "" {
+			t.Error("legacy server must not receive publishing retry promises")
+		}
+		if r.Header.Get("X-Request-ID") == "" {
+			t.Error("missing correlation")
+		}
+		io.WriteString(w, `{"success":true}`)
+	}))
+	defer server.Close()
+	if _, err := NewClient(server.URL, time.Second).Announce(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+}

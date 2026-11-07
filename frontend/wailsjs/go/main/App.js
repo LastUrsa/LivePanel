@@ -14,12 +14,12 @@ export function ActivateTuberSwitchProfile(arg1) {
   return window['go']['main']['App']['ActivateTuberSwitchProfile'](arg1);
 }
 
-export function ApplyTuberSwitchRedeemsManual(arg1) {
-  return window['go']['main']['App']['ApplyTuberSwitchRedeemsManual'](arg1);
-}
-
 export function AnnounceStreamSignal(arg1) {
   return window['go']['main']['App']['AnnounceStreamSignal'](arg1);
+}
+
+export function ApplyTuberSwitchRedeemsManual(arg1) {
+  return window['go']['main']['App']['ApplyTuberSwitchRedeemsManual'](arg1);
 }
 
 export function ClearModuleExecutablePath(arg1) {
@@ -34,6 +34,10 @@ export function EndStreamSignalStream() {
   return window['go']['main']['App']['EndStreamSignalStream']();
 }
 
+export function ExportSessionLogs() {
+  return window['go']['main']['App']['ExportSessionLogs']();
+}
+
 export function GetAutoStartManagedModules() {
   return window['go']['main']['App']['GetAutoStartManagedModules']();
 }
@@ -44,6 +48,10 @@ export function GetModuleExecutableConfigs() {
 
 export function GetModules() {
   return window['go']['main']['App']['GetModules']();
+}
+
+export function GetSessionLogWarning() {
+  return window['go']['main']['App']['GetSessionLogWarning']();
 }
 
 export function GetStreamSignalAnnounceStatus() {
@@ -92,6 +100,10 @@ export function GetTuberSwitchProfiles() {
 
 export function GetTuberSwitchRedeems() {
   return window['go']['main']['App']['GetTuberSwitchRedeems']();
+}
+
+export function OpenLogsFolder() {
+  return window['go']['main']['App']['OpenLogsFolder']();
 }
 
 export function OpenModule(arg1) {

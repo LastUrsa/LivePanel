@@ -29,6 +29,7 @@ type Service struct {
 	mu        sync.RWMutex
 	providers []Provider
 	modules   map[string]Module
+	observer  func(Module)
 }
 
 func NewService(providers []Provider) *Service {
@@ -37,6 +38,13 @@ func NewService(providers []Provider) *Service {
 		providers: copied,
 		modules:   map[string]Module{},
 	}
+}
+
+// SetObserver receives snapshots after refresh without holding the service lock.
+func (s *Service) SetObserver(observer func(Module)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.observer = observer
 }
 
 func (s *Service) Register(provider Provider) {
@@ -80,7 +88,13 @@ func (s *Service) Refresh(ctx context.Context) ([]Module, error) {
 	s.mu.Lock()
 	s.modules = next
 	out := sortedModules(s.modules)
+	observer := s.observer
 	s.mu.Unlock()
+	if observer != nil {
+		for _, module := range out {
+			observer(module)
+		}
+	}
 	return out, firstErr
 }
 
