@@ -2,6 +2,14 @@
 
 Release notes are part of the LivePanel release process. Before publishing a release, add a matching `## vX.Y.Z` section here. The release workflow publishes that section as the GitHub Release body and fails if it is missing or empty.
 
+## Unreleased
+
+- Separates publishing workflow timeouts from discovery/status timeouts so LivePanel no longer cancels multi-destination announcements after 1.2 seconds. The client limit is five minutes; dependent app/server limits still apply.
+- Shows announcement and end-stream results and errors directly on Stream Control, retaining immediate errors across stale or failed status refreshes and releasing busy controls after rejected requests.
+- Uses actual OBS connection flags ahead of scene/source summary text, preventing names such as `Offline` from producing a false disconnected indicator after a stream ends.
+- Adds regression coverage for publishing timeouts, cancellation, action failures, status refreshes, and OBS connection reporting.
+- Updates frontend dependencies and Wails to v2.13.0, and requires Go 1.26.10 in local/CI builds to address vulnerability scan findings.
+
 ## v0.2.1
 
 ### Highlights

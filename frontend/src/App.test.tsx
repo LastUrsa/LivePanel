@@ -952,6 +952,72 @@ describe('App workflows', () => {
     vi.mocked(api.clearModuleExecutablePath).mockResolvedValue([executableConfigFixture()]);
   });
 
+  it('shows immediate publishing errors even when status still reports no activity', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.announceStreamSignal).mockResolvedValue({ success: false, error: 'Bluesky publishing failed.' });
+    render(<App />);
+    await screen.findAllByDisplayValue('Gaming Stream');
+    await user.click(screen.getByRole('button', { name: /^Go Live$/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Bluesky publishing failed.');
+    expect(screen.getByText('Failed or incomplete')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Go Live$/i })).toBeEnabled();
+  });
+
+  it('unlocks publishing and displays rejected requests', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.announceStreamSignal).mockRejectedValue(new Error('Connection lost'));
+    render(<App />);
+    await screen.findAllByDisplayValue('Gaming Stream');
+    await user.click(screen.getByRole('button', { name: /^Go Live$/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Connection lost');
+    expect(screen.getByRole('button', { name: /^Go Live$/i })).toBeEnabled();
+  });
+
+  it('preserves an immediate failure across stale status and failed refreshes', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.announceStreamSignal).mockResolvedValue({ success: false, error: 'Publishing timed out.' });
+    render(<App />);
+    await screen.findAllByDisplayValue('Gaming Stream');
+    await user.click(screen.getByRole('button', { name: /^Go Live$/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Publishing timed out.');
+    await user.click(screen.getByRole('button', { name: 'Refresh modules' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Publishing timed out.');
+    vi.mocked(api.getStreamSignalProfiles).mockRejectedValueOnce(new Error('SIP unavailable'));
+    await user.click(screen.getByRole('button', { name: 'Refresh modules' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Publishing timed out.');
+  });
+
+  it.each(['returned', 'rejected'])('shows %s end-stream errors and unlocks actions', async (kind) => {
+    const user = userEvent.setup();
+    if (kind === 'returned') {
+      vi.mocked(api.endStreamSignalStream).mockResolvedValue({ success: false, error: 'End stream failed.' });
+    } else {
+      vi.mocked(api.endStreamSignalStream).mockRejectedValue(new Error('End stream failed.'));
+    }
+    render(<App />);
+    await screen.findAllByDisplayValue('Gaming Stream');
+    await user.click(screen.getByRole('button', { name: /^End Stream$/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('End stream failed.');
+    expect(screen.getByRole('button', { name: /^End Stream$/i })).toBeEnabled();
+  });
+
+  it.each(['returned', 'rejected'])('shows %s confirmation errors and closes the dialog', async (kind) => {
+    const user = userEvent.setup();
+    vi.mocked(api.announceStreamSignal).mockResolvedValue({ success: false, requiresConfirmation: true, confirmationId: 'confirm-1' });
+    if (kind === 'returned') {
+      vi.mocked(api.confirmStreamSignalAnnouncement).mockResolvedValue({ success: false, error: 'Confirmed post failed.' });
+    } else {
+      vi.mocked(api.confirmStreamSignalAnnouncement).mockRejectedValue(new Error('Confirmed post failed.'));
+    }
+    render(<App />);
+    await screen.findAllByDisplayValue('Gaming Stream');
+    await user.click(screen.getByRole('button', { name: /^Go Live$/i }));
+    await user.click(await screen.findByRole('button', { name: /^Confirm$/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Confirmed post failed.');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Go Live$/i })).toBeEnabled();
+  });
+
   it('loads StreamSignal workflow data on startup', async () => {
     render(<App />);
 
@@ -998,6 +1064,49 @@ describe('App workflows', () => {
     expect(obsItem).not.toBeNull();
     expect(obsItem).toHaveClass('readiness-running');
     expect(within(obsItem as HTMLElement).getByText('Connected: Gaming / VTuber')).toBeInTheDocument();
+  });
+
+  it.each([
+    { obsConnected: true, obsSummary: 'Connected: Offline / Stream ended' },
+    { obs: { connected: true, summary: 'Connected: Offline / Stream ended' } },
+    { obsSummary: 'Connected: Offline / Stream ended' },
+  ])('keeps OBS connected for an offline scene: %j', async (status) => {
+    const user = userEvent.setup();
+    vi.mocked(api.refreshModules).mockResolvedValue([
+      moduleFixture(), tideReaderModuleFixture(), tuberSwitchModuleFixture({ status }),
+    ]);
+    render(<App />);
+    await screen.findAllByDisplayValue('Gaming Stream');
+    await user.click(screen.getByRole('button', { name: /^End Stream$/i }));
+    await waitFor(() => expect(api.endStreamSignalStream).toHaveBeenCalledTimes(1));
+    const readiness = screen.getByLabelText('Stream readiness');
+    const obsItem = within(readiness).getByText('OBS').closest('article') as HTMLElement;
+    expect(obsItem).toHaveClass('readiness-running');
+    expect(within(obsItem).getByText('Connected: Offline / Stream ended')).toBeInTheDocument();
+  });
+
+  it('uses an explicit disconnected flag over a stale connected summary', async () => {
+    vi.mocked(api.refreshModules).mockResolvedValue([
+      moduleFixture(), tideReaderModuleFixture(),
+      tuberSwitchModuleFixture({ status: { obsConnected: false, obsSummary: 'Connected: Gaming / VTuber' } }),
+    ]);
+    render(<App />);
+    const readiness = await screen.findByLabelText('Stream readiness');
+    const obsItem = within(readiness).getByText('OBS').closest('article') as HTMLElement;
+    expect(obsItem).toHaveClass('readiness-offline');
+    expect(within(obsItem).getByText('Disconnected')).toBeInTheDocument();
+  });
+
+  it('shows a reconnecting OBS connection as awaiting recovery', async () => {
+    vi.mocked(api.refreshModules).mockResolvedValue([
+      moduleFixture(), tideReaderModuleFixture(),
+      tuberSwitchModuleFixture({ status: { obsConnected: false, obsConnectionState: 'reconnecting', obsSummary: 'OBS reconnecting' } }),
+    ]);
+    render(<App />);
+    const readiness = await screen.findByLabelText('Stream readiness');
+    const obsItem = within(readiness).getByText('OBS').closest('article') as HTMLElement;
+    expect(obsItem).toHaveClass('readiness-warning');
+    expect(within(obsItem).getByText('Reconnecting')).toBeInTheDocument();
   });
 
   it('starts installed offline modules when auto-start is enabled', async () => {

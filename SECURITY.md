@@ -7,7 +7,7 @@ LivePanel is a local desktop application. Its SIP integrations are intended for 
 The application currently:
 
 - Restricts configured SIP endpoints to local HTTP loopback hosts.
-- Uses bounded HTTP client timeouts for SIP requests.
+- Uses bounded HTTP client timeouts for SIP requests, with a five-minute limit for publishing workflows and shorter limits for discovery/status reads. Caller cancellation still applies.
 - Limits decoded SIP response bodies to 1 MiB.
 - Starts StreamSignal, TideReader, and TuberSwitch in `--service` mode for managed launches.
 - Shuts down processes it launched when LivePanel exits.
