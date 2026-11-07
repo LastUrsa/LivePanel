@@ -13,6 +13,8 @@ var assets embed.FS
 
 func main() {
 	app := NewApp()
+	app.initSessionLogging()
+	defer app.logs.Close()
 
 	err := wails.Run(&options.App{
 		Title:  "LivePanel",
@@ -28,6 +30,7 @@ func main() {
 		},
 	})
 	if err != nil {
+		app.logRunError(err)
 		println("Error:", err.Error())
 	}
 }

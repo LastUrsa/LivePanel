@@ -16,6 +16,9 @@ vi.mock('./lib/api/livepanel', async (importOriginal) => {
     clearModuleExecutablePath: vi.fn(),
     confirmStreamSignalAnnouncement: vi.fn(),
     endStreamSignalStream: vi.fn(),
+    openLogsFolder: vi.fn(),
+    exportSessionLogs: vi.fn(),
+    getSessionLogWarning: vi.fn(),
     getAutoStartManagedModules: vi.fn(),
     getModuleExecutableConfigs: vi.fn(),
     getStreamSignalAnnounceStatus: vi.fn(),
@@ -385,6 +388,14 @@ describe('Dashboard', () => {
     expect(screen.queryByText('1 Destination')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Go Live/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /End Stream/i })).toBeDisabled();
+  });
+
+  it('distinguishes published posts from follow-up failures in destination results', () => {
+    render(<Dashboard modules={[moduleFixture(), tideReaderModuleFixture(), tuberSwitchModuleFixture()]}
+      workflow={workflowFixture({ announceStatus: { lastRun: '2026-06-05T12:00:00Z', success: false,
+        results: [{ destinationId: 'bsky', platform: 'bluesky', state: 'failed', phase: 'live_now', published: true, message: 'Live Now failed.' }] } })}
+      tideReaderWorkflow={tideReaderWorkflowFixture()} tuberSwitchWorkflow={tuberSwitchWorkflowFixture()} {...actionFixture()} />);
+    expect(screen.getByText('bluesky: Post published — Live Now failed.')).toBeInTheDocument();
   });
 
   it('shows app details only when the drawer is requested', async () => {
@@ -917,6 +928,7 @@ describe('DiagnosticsPage', () => {
 describe('App workflows', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(api.getSessionLogWarning).mockResolvedValue('');
     vi.mocked(api.refreshModules).mockResolvedValue([moduleFixture(), tideReaderModuleFixture(), tuberSwitchModuleFixture()]);
     vi.mocked(api.listModules).mockResolvedValue([moduleFixture(), tideReaderModuleFixture(), tuberSwitchModuleFixture()]);
     vi.mocked(api.getAutoStartManagedModules).mockResolvedValue(true);
@@ -971,6 +983,19 @@ describe('App workflows', () => {
     await user.click(screen.getByRole('button', { name: /^Go Live$/i }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Connection lost');
     expect(screen.getByRole('button', { name: /^Go Live$/i })).toBeEnabled();
+  });
+
+  it('reconciles a known operation after a polling failure without relying on local clock ordering', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.announceStreamSignal).mockResolvedValue({ success: false, error: 'Polling lost connection.', operationId: 'known-op', operation: { id: 'known-op', outcome: 'running', startedAt: '2026-01-01T00:00:00Z' } });
+    render(<App />);
+    await screen.findAllByDisplayValue('Gaming Stream');
+    await user.click(screen.getByRole('button', { name: /^Go Live$/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Polling lost connection.');
+    vi.mocked(api.getStreamSignalAnnounceStatus).mockResolvedValue({ lastRun: '2026-01-01T00:01:00Z', success: true, operationId: 'known-op', operation: { id: 'known-op', outcome: 'success', startedAt: '2026-01-01T00:00:00Z' } });
+    await user.click(screen.getByRole('button', { name: 'Refresh modules' }));
+    await waitFor(() => expect(screen.queryByText('Polling lost connection.')).not.toBeInTheDocument());
+    expect(screen.getByText('Success')).toBeInTheDocument();
   });
 
   it('preserves an immediate failure across stale status and failed refreshes', async () => {
@@ -1236,6 +1261,21 @@ describe('App workflows', () => {
     expect(screen.getAllByText('Just Chatting (3D)').length).toBeGreaterThan(0);
   });
 
+  it('uses operation confirmation instead of refresh counts with newer TuberSwitch versions', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.activateTuberSwitchProfile).mockResolvedValue({ success: true, profile: 'Just Chatting', profileId: 'just-chatting', operationId: 'profile-operation' });
+    vi.mocked(api.getTuberSwitchCurrentProfile).mockResolvedValue({ id: 'gaming', name: 'Gaming Stream', confirmedOperationId: 'older-operation' });
+    render(<App />);
+    await screen.findAllByDisplayValue('Gaming Stream');
+    await user.selectOptions(screen.getByLabelText('TuberSwitch profile'), 'Just Chatting');
+    for (let i = 0; i < 4; i++) await user.click(screen.getByRole('button', { name: 'Refresh modules' }));
+    expect(screen.getByLabelText('TuberSwitch profile')).toHaveValue('Just Chatting');
+    expect(screen.queryByText(/did not confirm the requested profile/)).not.toBeInTheDocument();
+    vi.mocked(api.getTuberSwitchCurrentProfile).mockResolvedValue({ id: 'just-chatting', name: 'Just Chatting', confirmedOperationId: 'profile-operation', confirmedAt: '2026-11-07T00:00:00Z' });
+    await user.click(screen.getByRole('button', { name: 'Refresh modules' }));
+    expect(screen.getByLabelText('TuberSwitch profile')).toHaveValue('Just Chatting');
+  });
+
   it('rolls back an unconfirmed TuberSwitch profile after bounded refresh attempts', async () => {
     const user = userEvent.setup();
     vi.mocked(api.getTuberSwitchCurrentProfile).mockResolvedValue({ id: 'gaming', name: 'Gaming Stream' });
@@ -1313,6 +1353,54 @@ describe('App workflows', () => {
 
     await waitFor(() => expect(api.pickModuleExecutablePath).toHaveBeenCalledWith('tidereader'));
     expect(api.setModuleExecutablePath).toHaveBeenCalledWith('tidereader', 'D:/Apps/TideReader.Desktop.exe');
+  });
+
+  it('exposes only the two session log actions and handles export cancellation', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.exportSessionLogs).mockResolvedValue('');
+    vi.mocked(api.openLogsFolder).mockResolvedValue(undefined);
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Diagnostics' }));
+    const logs = screen.getByRole('region', { name: 'Session logs' });
+    expect(within(logs).getAllByRole('button')).toHaveLength(2);
+    expect(within(logs).queryByRole('checkbox')).not.toBeInTheDocument();
+    await user.click(within(logs).getByRole('button', { name: 'Open Logs Folder' }));
+    expect(api.openLogsFolder).toHaveBeenCalledTimes(1);
+    await user.click(within(logs).getByRole('button', { name: 'Export Session Logs' }));
+    expect(api.exportSessionLogs).toHaveBeenCalledTimes(1);
+    expect(within(logs).queryByRole('alert')).not.toBeInTheDocument();
+    expect(within(logs).queryByRole('status')).not.toBeInTheDocument();
+    expect(within(logs).getByRole('button', { name: 'Export Session Logs' })).toBeEnabled();
+  });
+
+  it('reports log action success and errors without leaving the buttons busy', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.exportSessionLogs).mockResolvedValue('Session logs exported.');
+    vi.mocked(api.openLogsFolder).mockRejectedValue(new Error('OS error'));
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Diagnostics' }));
+    await user.click(screen.getByRole('button', { name: 'Export Session Logs' }));
+    expect(await screen.findByText('Session logs exported.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Open Logs Folder' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to open the logs folder.');
+    expect(screen.getByRole('button', { name: 'Open Logs Folder' })).toBeEnabled();
+  });
+
+  it('surfaces export failures and restores the export button', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.exportSessionLogs).mockRejectedValue(new Error('Disk full'));
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Diagnostics' }));
+    await user.click(screen.getByRole('button', { name: 'Export Session Logs' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to export session logs.');
+    expect(screen.getByRole('button', { name: 'Export Session Logs' })).toBeEnabled();
+  });
+
+  it('shows a brief warning when session logging fails', async () => {
+    vi.mocked(api.getSessionLogWarning).mockResolvedValue('Session logging could not write its files.');
+    render(<App />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Session logging could not write its files.');
+    expect(screen.queryByText(/session ID/i)).not.toBeInTheDocument();
   });
 
   it('opens diagnostics as a top-level page', async () => {

@@ -25,6 +25,16 @@ LivePanel can pass user-edited StreamSignal announcement fields, TideReader brow
 
 StreamSignal one-time announcement field edits are sent with the `Go Live` request and are not persisted by LivePanel. TuberSwitch redeem changes use the manual/session endpoint so LivePanel does not save those changes back to the selected TuberSwitch profile. TideReader browser support is treated as an app-level setting owned by TideReader.
 
+## Persistent Session Logs
+
+LivePanel keeps automatic JSONL logs locally, with fixed 5 MiB rotation, 14-day retention, and a 100 MiB total budget. The active segment is protected. The log directory and files use restrictive creation permissions on platforms supporting Unix modes; Windows permissions inherit from the user's configuration directory. `LIVEPANEL_LOG_DIR` is intended for development/test isolation and should point to a private directory.
+
+Logging accepts typed operational metadata. Credentials, announcement text, profile/scene/source names, raw HTTP payloads, URLs/query strings, arbitrary module status maps, and raw error messages are excluded. Error categories deliberately sacrifice some detail to avoid persisting secrets echoed by upstream services. Active profile IDs are stored only as hashed references for change detection; these are pseudonymous operational identifiers, not a guarantee of anonymity. No dependent app credential store or log file is collected.
+
+Export Session Logs writes a user-selected ZIP of recognized retained LivePanel session files only. It skips symlink source entries, rejects symlink/non-file targets and destinations within the log directory, and writes to a temporary file before replacing the destination. Exports are local and never uploaded automatically. Logs and exports can still contain operational timing, tool versions, and connection history; review them before sharing.
+
+Logging failures surface a brief UI warning and do not stop streaming actions. Session files are flushed to the operating system per record and synced at orderly process exit; logging is not guaranteed across power loss or forced termination.
+
 ## Linked Dev Builds
 
 The linked dev scripts mirror local source checkouts into `C:\Temp\StarsongLinkedDev` so Windows build tools can avoid WSL UNC path issues. The mirror is for source and build artifacts only. The sync excludes `.git`, local agent metadata, dependency folders, generated output, logs, common environment files, database files, and common key/certificate file formats.

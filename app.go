@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,16 +15,19 @@ import (
 	"time"
 
 	"LivePanel/internal/modules"
+	"LivePanel/internal/sessionlog"
 	"LivePanel/internal/sip"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type App struct {
-	ctx       context.Context
-	service   *modules.Service
-	autoStart bool
-	config    AppConfig
-	configs   *ConfigStore
+	ctx           context.Context
+	service       *modules.Service
+	autoStart     bool
+	config        AppConfig
+	configs       *ConfigStore
+	logs          *sessionlog.Logger
+	configLoadErr error
 }
 
 type TideReaderOverlaySnapshot struct {
@@ -59,12 +63,13 @@ type moduleDefinition struct {
 
 func NewApp() *App {
 	store := NewConfigStore()
-	config, _ := store.Load()
+	config, loadErr := store.Load()
 	return &App{
-		service:   modules.NewService(defaultProviders(config.Modules)),
-		autoStart: true,
-		config:    config,
-		configs:   store,
+		service:       modules.NewService(defaultProviders(config.Modules)),
+		autoStart:     true,
+		config:        config,
+		configs:       store,
+		configLoadErr: loadErr,
 	}
 }
 
@@ -76,7 +81,8 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) shutdown(_ context.Context) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
-	_ = a.service.Shutdown(shutdownCtx)
+	err := a.service.Shutdown(shutdownCtx)
+	a.logs.Record(sessionlog.Event{Name: "session_stopped", Outcome: outcome(err == nil), ErrorKind: sessionlog.ErrorKind(err)})
 }
 
 func (a *App) GetModules() []modules.Module {
@@ -96,8 +102,22 @@ func (a *App) RefreshModules() []modules.Module {
 	return modulesList
 }
 
-func (a *App) StartModule(id string) []modules.Module {
-	ctx := a.ctx
+func (a *App) StartModule(id string) (result []modules.Module) {
+	logModule := id
+	if !knownModuleID(id) {
+		logModule = "unknown"
+	}
+	actionCtx, finish := a.beginAction(logModule, "start_module")
+	defer func() {
+		success := false
+		for _, module := range result {
+			if module.ID == id {
+				success = module.Running && module.Error == ""
+			}
+		}
+		finish(success, "", false)
+	}()
+	ctx := actionCtx
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -113,8 +133,22 @@ func (a *App) StartModule(id string) []modules.Module {
 	return modulesList
 }
 
-func (a *App) OpenModule(id string) []modules.Module {
-	ctx := a.ctx
+func (a *App) OpenModule(id string) (result []modules.Module) {
+	logModule := id
+	if !knownModuleID(id) {
+		logModule = "unknown"
+	}
+	actionCtx, finish := a.beginAction(logModule, "open_module")
+	defer func() {
+		success := false
+		for _, module := range result {
+			if module.ID == id {
+				success = module.Running && module.Error == ""
+			}
+		}
+		finish(success, "", false)
+	}()
+	ctx := actionCtx
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -150,16 +184,18 @@ func (a *App) GetStreamSignalCurrentProfile() sip.CurrentProfileResponse {
 	return current
 }
 
-func (a *App) ActivateStreamSignalProfile(profile string) sip.ProfileActivationResponse {
+func (a *App) ActivateStreamSignalProfile(profile string) (result sip.ProfileActivationResponse) {
+	actionCtx, finish := a.beginAction("streamsignal", "activate_profile")
+	defer func() { finish(result.Success, result.Error, false) }()
 	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
 	if err != nil {
 		return sip.ProfileActivationResponse{Success: false, Error: err.Error()}
 	}
-	activated, err := client.ActivateProfile(a.requestContext(), profile)
+	activated, err := client.ActivateProfile(actionCtx, profile)
 	if err != nil {
 		return sip.ProfileActivationResponse{Success: false, Error: err.Error()}
 	}
-	_, _ = a.service.Refresh(a.requestContext())
+	_, _ = a.service.Refresh(actionCtx)
 	return activated
 }
 
@@ -175,12 +211,14 @@ func (a *App) GetStreamSignalAnnouncementFields() sip.AnnouncementFieldsResponse
 	return fields
 }
 
-func (a *App) UpdateStreamSignalAnnouncementFields(fields []sip.UpdateAnnouncementFieldRequest) sip.SuccessResponse {
+func (a *App) UpdateStreamSignalAnnouncementFields(fields []sip.UpdateAnnouncementFieldRequest) (result sip.SuccessResponse) {
+	actionCtx, finish := a.beginAction("streamsignal", "update_fields")
+	defer func() { finish(result.Success, result.Error, false) }()
 	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
 	if err != nil {
 		return sip.SuccessResponse{Success: false, Error: err.Error()}
 	}
-	response, err := client.UpdateAnnouncementFields(a.requestContext(), fields)
+	response, err := client.UpdateAnnouncementFields(actionCtx, fields)
 	if err != nil {
 		return sip.SuccessResponse{Success: false, Error: err.Error()}
 	}
@@ -212,16 +250,18 @@ func (a *App) GetTideReaderCurrentProfile() sip.CurrentProfileResponse {
 	return current
 }
 
-func (a *App) ActivateTideReaderProfile(profile string) sip.ProfileActivationResponse {
+func (a *App) ActivateTideReaderProfile(profile string) (result sip.ProfileActivationResponse) {
+	actionCtx, finish := a.beginAction("tidereader", "activate_profile")
+	defer func() { finish(result.Success, result.Error, false) }()
 	client, err := a.sipClientForModule("tidereader", "TideReader")
 	if err != nil {
 		return sip.ProfileActivationResponse{Success: false, Error: err.Error()}
 	}
-	activated, err := client.ActivateProfile(a.requestContext(), profile)
+	activated, err := client.ActivateProfile(actionCtx, profile)
 	if err != nil {
 		return sip.ProfileActivationResponse{Success: false, Error: err.Error()}
 	}
-	_, _ = a.service.Refresh(a.requestContext())
+	_, _ = a.service.Refresh(actionCtx)
 	return activated
 }
 
@@ -237,16 +277,18 @@ func (a *App) GetTideReaderBrowserSupport() sip.BrowserSupportResponse {
 	return response
 }
 
-func (a *App) SetTideReaderBrowserSupport(enabled bool) sip.SuccessResponse {
+func (a *App) SetTideReaderBrowserSupport(enabled bool) (result sip.SuccessResponse) {
+	actionCtx, finish := a.beginAction("tidereader", "set_browser_support")
+	defer func() { finish(result.Success, result.Error, false) }()
 	client, err := a.sipClientForModule("tidereader", "TideReader")
 	if err != nil {
 		return sip.SuccessResponse{Success: false, Error: err.Error()}
 	}
-	response, err := client.SetBrowserSupport(a.requestContext(), enabled)
+	response, err := client.SetBrowserSupport(actionCtx, enabled)
 	if err != nil {
 		return sip.SuccessResponse{Success: false, Error: err.Error()}
 	}
-	_, _ = a.service.Refresh(a.requestContext())
+	_, _ = a.service.Refresh(actionCtx)
 	return response
 }
 
@@ -275,16 +317,18 @@ func (a *App) GetTuberSwitchCurrentProfile() sip.CurrentProfileResponse {
 	return current
 }
 
-func (a *App) ActivateTuberSwitchProfile(profile string) sip.ProfileActivationResponse {
+func (a *App) ActivateTuberSwitchProfile(profile string) (result sip.ProfileActivationResponse) {
+	actionCtx, finish := a.beginAction("tuberswitch", "activate_profile")
+	defer func() { finish(result.Success, result.Error, false) }()
 	client, err := a.sipClientForModule("tuberswitch", "TuberSwitch")
 	if err != nil {
 		return sip.ProfileActivationResponse{Success: false, Error: err.Error()}
 	}
-	activated, err := client.ActivateProfile(a.requestContext(), profile)
+	activated, err := client.ActivateProfile(actionCtx, profile)
 	if err != nil {
 		return sip.ProfileActivationResponse{Success: false, Error: err.Error()}
 	}
-	_, _ = a.service.Refresh(a.requestContext())
+	_, _ = a.service.Refresh(actionCtx)
 	return activated
 }
 
@@ -300,33 +344,45 @@ func (a *App) GetTuberSwitchRedeems() sip.RedeemsResponse {
 	return response
 }
 
-func (a *App) SetTuberSwitchRedeems(redeems []sip.UpdateRedeemRequest) sip.SuccessResponse {
+func (a *App) SetTuberSwitchRedeems(redeems []sip.UpdateRedeemRequest) (result sip.SuccessResponse) {
+	actionCtx, finish := a.beginAction("tuberswitch", "set_redeems")
+	defer func() { finish(result.Success, result.Error, false) }()
 	client, err := a.sipClientForModule("tuberswitch", "TuberSwitch")
 	if err != nil {
 		return sip.SuccessResponse{Success: false, Error: err.Error()}
 	}
-	response, err := client.SetRedeems(a.requestContext(), redeems)
+	response, err := client.SetRedeems(actionCtx, redeems)
 	if err != nil {
 		return sip.SuccessResponse{Success: false, Error: err.Error()}
 	}
-	_, _ = a.service.Refresh(a.requestContext())
+	_, _ = a.service.Refresh(actionCtx)
 	return response
 }
 
-func (a *App) ApplyTuberSwitchRedeemsManual(redeems []sip.UpdateRedeemRequest) sip.SuccessResponse {
+func (a *App) ApplyTuberSwitchRedeemsManual(redeems []sip.UpdateRedeemRequest) (result sip.SuccessResponse) {
+	actionCtx, finish := a.beginAction("tuberswitch", "manual_redeems")
+	defer func() { finish(result.Success, result.Error, false) }()
 	client, err := a.sipClientForModule("tuberswitch", "TuberSwitch")
 	if err != nil {
 		return sip.SuccessResponse{Success: false, Error: err.Error()}
 	}
-	response, err := client.ApplyRedeemsManual(a.requestContext(), redeems)
+	response, err := client.ApplyRedeemsManual(actionCtx, redeems)
 	if err != nil {
 		return sip.SuccessResponse{Success: false, Error: err.Error()}
 	}
-	_, _ = a.service.Refresh(a.requestContext())
+	_, _ = a.service.Refresh(actionCtx)
 	return response
 }
 
-func (a *App) GetTideReaderOverlaySnapshot() TideReaderOverlaySnapshot {
+func (a *App) GetTideReaderOverlaySnapshot() (result TideReaderOverlaySnapshot) {
+	started := time.Now()
+	defer func() {
+		var err error
+		if !result.Available {
+			err = errors.New("overlay unavailable")
+		}
+		a.logs.Request(a.requestContext(), "tidereader", "GET", "/overlay/snapshot", time.Since(started), 0, err)
+	}()
 	overlayURL := a.tideReaderOverlayURL()
 	if overlayURL == "" {
 		return TideReaderOverlaySnapshot{Available: false, NowPlaying: map[string]interface{}{}, Settings: map[string]interface{}{}, Error: "TideReader overlay unavailable."}
@@ -352,26 +408,34 @@ func (a *App) GetTideReaderOverlaySnapshot() TideReaderOverlaySnapshot {
 	}
 }
 
-func (a *App) AnnounceStreamSignal(fields []sip.UpdateAnnouncementFieldRequest) sip.AnnounceResponse {
+func (a *App) AnnounceStreamSignal(fields []sip.UpdateAnnouncementFieldRequest) (result sip.AnnounceResponse) {
+	actionCtx, finish := a.beginAction("streamsignal", "announce")
+	defer func() { finish(result.Success, result.Error, result.RequiresConfirmation) }()
 	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
 	if err != nil {
 		return sip.AnnounceResponse{Success: false, Error: "StreamSignal unavailable."}
 	}
-	response, err := client.Announce(a.requestContext(), fields)
+	response, err := client.Announce(actionCtx, fields)
 	if err != nil {
-		return sip.AnnounceResponse{Success: false, Error: err.Error()}
+		response.Success = false
+		response.Error = err.Error()
+		return response
 	}
 	return response
 }
 
-func (a *App) ConfirmStreamSignalAnnouncement(confirmationID string) sip.AnnounceResponse {
+func (a *App) ConfirmStreamSignalAnnouncement(confirmationID string) (result sip.AnnounceResponse) {
+	actionCtx, finish := a.beginAction("streamsignal", "confirm_announcement")
+	defer func() { finish(result.Success, result.Error, result.RequiresConfirmation) }()
 	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
 	if err != nil {
 		return sip.AnnounceResponse{Success: false, Error: "StreamSignal unavailable."}
 	}
-	response, err := client.ConfirmAnnouncement(a.requestContext(), confirmationID)
+	response, err := client.ConfirmAnnouncement(actionCtx, confirmationID)
 	if err != nil {
-		return sip.AnnounceResponse{Success: false, Error: err.Error()}
+		response.Success = false
+		response.Error = err.Error()
+		return response
 	}
 	return response
 }
@@ -388,14 +452,18 @@ func (a *App) GetStreamSignalAnnounceStatus() sip.AnnounceStatusResponse {
 	return status
 }
 
-func (a *App) EndStreamSignalStream() sip.EndStreamResponse {
+func (a *App) EndStreamSignalStream() (result sip.EndStreamResponse) {
+	actionCtx, finish := a.beginAction("streamsignal", "end_stream")
+	defer func() { finish(result.Success, result.Error, false) }()
 	client, err := a.sipClientForModule("streamsignal", "StreamSignal")
 	if err != nil {
 		return sip.EndStreamResponse{Success: false, Error: "StreamSignal unavailable."}
 	}
-	response, err := client.EndStream(a.requestContext())
+	response, err := client.EndStream(actionCtx)
 	if err != nil {
-		return sip.EndStreamResponse{Success: false, Error: err.Error()}
+		response.Success = false
+		response.Error = err.Error()
+		return response
 	}
 	return response
 }
@@ -417,6 +485,8 @@ func (a *App) GetAutoStartManagedModules() bool {
 }
 
 func (a *App) SetAutoStartManagedModules(enabled bool) bool {
+	_, finish := a.beginAction("livepanel", "set_auto_start")
+	defer finish(true, "", false)
 	a.autoStart = enabled
 	return a.autoStart
 }
@@ -438,7 +508,12 @@ func (a *App) SetModuleExecutablePath(id string, executablePath string) []Module
 	} else {
 		a.config.Modules[id] = ModuleConfig{ExecutablePath: executablePath}
 	}
-	_ = a.configs.Save(a.config)
+	_, finish := a.beginAction(id, "set_module_location")
+	err := a.configs.Save(a.config)
+	finish(err == nil, "", false)
+	if err != nil {
+		a.logs.Record(sessionlog.Event{Name: "configuration_save_failed", ErrorKind: sessionlog.ErrorKind(err)})
+	}
 	a.rebuildProviders()
 	return a.GetModuleExecutableConfigs()
 }
@@ -927,7 +1002,15 @@ func (a *App) sipClientForModule(id string, name string) (*sip.Client, error) {
 		if module.ID != id || !module.Running || strings.TrimSpace(module.Endpoint) == "" {
 			continue
 		}
-		return sip.NewClient(module.Endpoint, 1200*time.Millisecond), nil
+		client := sip.NewClient(module.Endpoint, 1200*time.Millisecond)
+		client.SetObserver(a.observeRequest(id))
+		client.SetCorrelationIDProvider(sessionlog.ActionID)
+		for _, capability := range module.Capabilities {
+			if id == "streamsignal" && capability == "async-publishing" {
+				client.SetAsyncPublishing(true)
+			}
+		}
+		return client, nil
 	}
 	return nil, fmt.Errorf("%s unavailable", name)
 }

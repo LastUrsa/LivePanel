@@ -6,6 +6,9 @@ import {
   AnnounceStreamSignal,
   ConfirmStreamSignalAnnouncement,
   EndStreamSignalStream,
+  OpenLogsFolder,
+  ExportSessionLogs,
+  GetSessionLogWarning,
   GetAutoStartManagedModules,
   ClearModuleExecutablePath,
   GetModules,
@@ -52,7 +55,7 @@ export type ModuleInfo = {
   error?: string;
 };
 
-export type CurrentProfile = {
+export type CurrentProfile = OperationMetadata & {
   id: string;
   name: string;
 };
@@ -63,21 +66,45 @@ export type AnnouncementField = {
   value: string;
 };
 
-export type ProfileActivation = {
+export type ProfileActivation = OperationMetadata & {
   success: boolean;
   profile?: string;
   profileId?: string;
   error?: string;
 };
 
-export type AnnounceResult = {
+export type DestinationResult = {
+  integration?: string;
+  destinationId: string;
+  platform: string;
+  state: string;
+  phase: string;
+  errorCode?: string;
+  message?: string;
+  published?: boolean | null;
+};
+export type OperationMetadata = {
+  requestId?: string;
+  sessionId?: string;
+  operationId?: string;
+  operation?: { id: string; outcome: string; startedAt?: string; updatedAt?: string };
+  observedAt?: string;
+  errorCode?: string;
+  message?: string;
+  results?: DestinationResult[];
+  confirmedAt?: string;
+  confirmedOperationId?: string;
+  revision?: number;
+};
+
+export type AnnounceResult = OperationMetadata & {
   success: boolean;
   requiresConfirmation?: boolean;
   confirmationId?: string;
   error?: string;
 };
 
-export type AnnounceStatus = {
+export type AnnounceStatus = OperationMetadata & {
   lastRun: string;
   success: boolean;
   requiresConfirmation?: boolean;
@@ -85,12 +112,12 @@ export type AnnounceStatus = {
   error?: string;
 };
 
-export type EndStreamResult = {
+export type EndStreamResult = OperationMetadata & {
   success: boolean;
   error?: string;
 };
 
-export type EndStreamStatus = {
+export type EndStreamStatus = OperationMetadata & {
   lastRun: string;
   success: boolean;
   error?: string;
@@ -265,3 +292,7 @@ export function endStreamSignalStream(): Promise<EndStreamResult> {
 export function getStreamSignalEndStreamStatus(): Promise<EndStreamStatus> {
   return GetStreamSignalEndStreamStatus();
 }
+
+export function openLogsFolder(): Promise<void> { return OpenLogsFolder(); }
+export function exportSessionLogs(): Promise<string> { return ExportSessionLogs(); }
+export function getSessionLogWarning(): Promise<string> { return GetSessionLogWarning(); }

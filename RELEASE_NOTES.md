@@ -4,6 +4,12 @@ Release notes are part of the LivePanel release process. Before publishing a rel
 
 ## Unreleased
 
+- Adds optional SIP operation metadata, request correlation, StreamSignal asynchronous publishing/idempotency, per-destination publication/follow-up display and safe logging, and operation-based TuberSwitch confirmation with legacy fallback.
+
+- Adds automatic persistent JSONL session logging with correlated action/request events, module and OBS transitions, polling failure/recovery deduplication, and fixed file rotation/retention.
+- Adds Open Logs Folder and Export Session Logs in Diagnostics; logging failures show a brief warning without adding configuration controls.
+- Excludes raw error text, announcement content, credentials, and raw API/status payloads from log storage and exports.
+
 - Separates publishing workflow timeouts from discovery/status timeouts so LivePanel no longer cancels multi-destination announcements after 1.2 seconds. The client limit is five minutes; dependent app/server limits still apply.
 - Shows announcement and end-stream results and errors directly on Stream Control, retaining immediate errors across stale or failed status refreshes and releasing busy controls after rejected requests.
 - Uses actual OBS connection flags ahead of scene/source summary text, preventing names such as `Offline` from producing a false disconnected indicator after a stream ends.

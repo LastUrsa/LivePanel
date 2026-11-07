@@ -122,11 +122,25 @@ Remote hosts are rejected.
 
 Diagnostics are intentionally separate from Settings. Use the Diagnostics tab for module health, SIP endpoints, resolved executable paths, capabilities, and raw status payloads.
 
-Stream Control shows the last announcement and end-stream result, with errors expanded inline. Immediate action errors remain visible across stale status responses and temporary refresh failures. This is an in-memory activity snapshot, not persistent session logging; restarting LivePanel loses locally retained results, and StreamSignal supplies any available last-run status.
+Stream Control shows the last announcement and end-stream result, with errors expanded inline. Immediate action errors remain visible across stale status responses and temporary refresh failures. The cards are an in-memory activity snapshot supplied by StreamSignal and immediate action responses. A separate persistent session log retains troubleshooting events across app restarts.
 
 Publishing actions (`Go Live`, confirmation, and `End Stream`) allow up to five minutes on the LivePanel client, separately from short discovery/status requests. StreamSignal and destination services can impose shorter limits. A timeout or lost connection can leave posting outcomes uncertain; check the destination before retrying to avoid duplicates.
 
 OBS readiness uses the reported connection flag before interpreting summary text. Scene/source names such as `Offline` do not mark a connected OBS instance as disconnected. Stopping a stream does not itself mean the OBS WebSocket connection has closed.
+
+## Session Logs
+
+LivePanel automatically records a local troubleshooting timeline for each app launch. In **Diagnostics**, use **Open Logs Folder** to inspect files or **Export Session Logs** to save a ZIP containing all retained sessions, including the current session. Canceling the save dialog creates no export. No logging settings, session IDs, or log paths are displayed in the UI; a brief warning appears if logging cannot write or maintain its files.
+
+On Windows, logs live in `%APPDATA%\LivePanel\logs`. Other platforms use the operating system's user configuration directory under `LivePanel/logs`. Developers/tests can set `LIVEPANEL_LOG_DIR` to isolate logs from their normal installation.
+
+Files use JSON Lines with UTC timestamps, a session ID, and an action ID for correlated action/request events. They record app/tool versions, configuration failures, action starts/results/durations, HTTP status and transport failure categories, module availability/health changes, hashed active-profile references for detecting profile changes, and reported OBS connection changes. Identical repeated polling failures are suppressed; recovery is recorded. Logs distinguish an HTTP transport success from the owning app's action outcome. An action with no finish record may have been interrupted; a timeout does not establish whether a destination posted successfully.
+
+Each file rotates at 5 MiB. Retention removes the oldest log segments after 14 days or when total storage exceeds 100 MiB; the current segment is protected. Records go directly to the OS file without application buffering, and orderly exit syncs/closes the file. Abrupt termination or power loss can still lose pending OS writes. LivePanel remains usable when logging fails. Recording pauses until the next launch after a write/retention failure, preventing unchecked growth when old files cannot be removed; the retained timeline may be incomplete.
+
+Logs omit credentials, announcement text, profile/scene/source names, raw API bodies, arbitrary status payloads, and raw error messages. Errors use categories such as `timeout`, `canceled`, or `operation_error`; detailed destination errors remain owned by the app performing the action. Exports include only recognized session log files and do not upload anything. Review an archive before sharing it.
+
+Companion app API recommendations are tracked in [SIP_TROUBLESHOOTING_RECOMMENDATIONS.md](./SIP_TROUBLESHOOTING_RECOMMENDATIONS.md).
 
 ## Manual Controls
 
@@ -285,3 +299,10 @@ TideReader early startup diagnostics are written to:
 ```text
 %APPDATA%\TideReader\logs\startup.log
 ```
+
+
+## SIP Observability Compatibility
+
+LivePanel forwards action IDs as `X-Request-ID` and publishing idempotency keys. It uses asynchronous publishing only when StreamSignal advertises `async-publishing`, polls the returned operation within the existing five-minute client budget, and never retries a publishing POST automatically. Structured destination results distinguish confirmed publication from failed follow-up work or unknown publication. Safe operation IDs, owner session IDs, error codes and per-destination outcomes are added to the persistent timeline without copying raw messages or content.
+
+TuberSwitch operation confirmation IDs replace refresh-count confirmation when available, with a bounded 30-second wait; older apps retain the existing compatibility behavior. All additive metadata is optional for legacy app versions. The [common protocol contract](./SIP_OBSERVABILITY_V1.md) is shared with the companion-app PRs.
