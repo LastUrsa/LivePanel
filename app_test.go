@@ -73,43 +73,43 @@ func TestTideReaderExecutableCandidatesPreferStandardInstall(t *testing.T) {
 	if len(candidates) < 1 {
 		t.Fatal("expected executable candidates")
 	}
-	want := filepath.Join(programFiles, "Starsong Tools", "TideReader", "TideReader.Desktop.exe")
+	want := filepath.Join(programFiles, "Starsong Tools", "TideReader", "TideReader.exe")
 	if candidates[0] != want {
 		t.Fatalf("expected first candidate %q, got %q", want, candidates[0])
 	}
 }
 
-func TestTideReaderExecutableCandidatesIncludeFutureStandardExecutable(t *testing.T) {
+func TestTideReaderExecutableCandidatesRetainLegacyFallback(t *testing.T) {
 	programFiles := t.TempDir()
 	t.Setenv("ProgramW6432", "")
 	t.Setenv("ProgramFiles", programFiles)
 	t.Setenv("SystemDrive", "")
 
 	candidates := tideReaderExecutableCandidates()
-	want := filepath.Join(programFiles, "Starsong Tools", "TideReader", "TideReader.exe")
+	want := filepath.Join(programFiles, "Starsong Tools", "TideReader", "TideReader.Desktop.exe")
 	if len(candidates) < 2 || candidates[1] != want {
-		t.Fatalf("expected future TideReader executable candidate %q second, got %+v", want, candidates)
+		t.Fatalf("expected legacy TideReader executable candidate %q second, got %+v", want, candidates)
 	}
 }
 
-func TestExecutableForDefinitionFindsFutureTideReaderStandardExecutable(t *testing.T) {
+func TestExecutableForDefinitionFindsReleasedTideReaderStandardExecutable(t *testing.T) {
 	programFiles := t.TempDir()
 	t.Setenv("ProgramW6432", "")
 	t.Setenv("ProgramFiles", programFiles)
 	t.Setenv("SystemDrive", "")
 	t.Chdir(t.TempDir())
 
-	futurePath := filepath.Join(programFiles, "Starsong Tools", "TideReader", "TideReader.exe")
-	if err := os.MkdirAll(filepath.Dir(futurePath), 0o755); err != nil {
+	releasedPath := filepath.Join(programFiles, "Starsong Tools", "TideReader", "TideReader.exe")
+	if err := os.MkdirAll(filepath.Dir(releasedPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(futurePath, []byte("stub"), 0o755); err != nil {
+	if err := os.WriteFile(releasedPath, []byte("stub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	definition, _ := moduleDefinitionByID("tidereader")
-	if got := executableForDefinition(definition, ModuleConfig{}); got != futurePath {
-		t.Fatalf("expected future TideReader standard executable %q, got %q", futurePath, got)
+	if got := executableForDefinition(definition, ModuleConfig{}); got != releasedPath {
+		t.Fatalf("expected released TideReader standard executable %q, got %q", releasedPath, got)
 	}
 }
 
@@ -423,4 +423,37 @@ func findModule(modules []modules.Module, id string) *modules.Module {
 		}
 	}
 	return nil
+}
+
+func TestTideReaderDiscoveryPrefersReleasedExecutableOverStaleLegacyCopy(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ProgramW6432", "")
+	t.Setenv("ProgramFiles", root)
+	t.Setenv("SystemDrive", "")
+	t.Setenv("LIVEPANEL_TIDEREADER_EXECUTABLE", "")
+	t.Chdir(t.TempDir())
+	directory := filepath.Join(root, "Starsong Tools", "TideReader")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	released := filepath.Join(directory, "TideReader.exe")
+	legacy := filepath.Join(directory, "TideReader.Desktop.exe")
+	for _, path := range []string{released, legacy} {
+		if err := os.WriteFile(path, []byte("fixture"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	definition, _ := moduleDefinitionByID("tidereader")
+	if got := executableForDefinition(definition, ModuleConfig{}); got != released {
+		t.Fatalf("selected stale executable: %s", got)
+	}
+	if err := os.Remove(released); err != nil {
+		t.Fatal(err)
+	}
+	if got := executableForDefinition(definition, ModuleConfig{}); got != legacy {
+		t.Fatalf("legacy fallback unavailable: %s", got)
+	}
+	if got := executableForDefinition(definition, ModuleConfig{ExecutablePath: "explicit-selection.exe"}); got != "explicit-selection.exe" {
+		t.Fatal("saved user override was ignored")
+	}
 }

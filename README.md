@@ -2,19 +2,19 @@
 
 LivePanel is a local desktop control panel for Starsong Tools.
 
-The long-term intent is for LivePanel to provide a single place to see status, launch tools, and run common actions across the Starsong Tools suite. The current implementation supports StreamSignal, TideReader, and TuberSwitch.
+LivePanel brings status, app launching, profiles, and common stream-session actions for StreamSignal, TideReader, and TuberSwitch into one Windows desktop panel.
 
 Today, LivePanel can start StreamSignal, TideReader, and TuberSwitch in service mode, show module status, switch active profiles, send StreamSignal announcements with one-time field edits, run the StreamSignal end-stream workflow, toggle app-level TideReader browser support, temporarily adjust manageable TuberSwitch redeems, and preview the active TideReader overlay without opening the full tool interfaces.
 
 ## App Requirements
 
-LivePanel v0.2.1 requires SIP and service-mode compliant versions of the dependent Starsong apps listed below. Earlier versions are not expected to appear in LivePanel Diagnostics or may not expose the controls required by this LivePanel release.
+LivePanel v1.0.0 supports Windows x64 with Microsoft WebView2 Runtime and the stable companion releases below. Install the companion apps separately. Older SIP/service-mode versions may still be discovered through compatibility fallbacks, but can lack operation metadata or controls; they are outside the 1.0 supported baseline.
 
-| App | Minimum Version |
+| App | Supported Version |
 | --- | --- |
-| StreamSignal | v0.5.1 or newer |
-| TideReader | v0.6.0 or newer |
-| TuberSwitch | v0.7.2 or newer |
+| StreamSignal | [v1.0.0](https://github.com/LastUrsa/StreamSignal/releases/tag/v1.0.0) or newer |
+| TideReader | [v1.0.0](https://github.com/LastUrsa/TideReader/releases/tag/v1.0.0) or newer |
+| TuberSwitch | [v1.0.0](https://github.com/LastUrsa/TuberSwitch/releases/tag/v1.0.0) or newer |
 
 Update this table for each LivePanel release. Historical per-release requirements are tracked in [APP_COMPATIBILITY.md](./APP_COMPATIBILITY.md), and the matching release notes should repeat the requirements for that release.
 
@@ -67,6 +67,8 @@ http://127.0.0.1:47041
 http://127.0.0.1:47049
 ```
 
+Automatic discovery prefers `TideReader.exe` so an old `TideReader.Desktop.exe` left by an earlier install does not take precedence. Explicit saved paths and environment overrides still win; clear a stale override in Settings to use discovery. TuberSwitch owns auto-detection: configure its 3D/PNG target profiles and matching saved modes in TuberSwitch; LivePanel reads the active profile and detection status.
+
 TideReader overlay preview data defaults to:
 
 ```text
@@ -92,8 +94,8 @@ Standard Windows install paths checked by auto-detection are:
 
 ```text
 %ProgramFiles%\Starsong Tools\StreamSignal\StreamSignal.exe
-%ProgramFiles%\Starsong Tools\TideReader\TideReader.Desktop.exe
 %ProgramFiles%\Starsong Tools\TideReader\TideReader.exe
+%ProgramFiles%\Starsong Tools\TideReader\TideReader.Desktop.exe (legacy fallback)
 %ProgramFiles%\Starsong Tools\TuberSwitch\TuberSwitch.exe
 ```
 
@@ -156,7 +158,7 @@ The app detail drawers use SIP capabilities and status payloads to decide which 
 
 ## Development
 
-Use Go `1.26.10` or newer. Earlier Go 1.26 patch releases include standard-library vulnerabilities reported by `govulncheck`.
+Use Go `1.26.10` or newer, Node.js 24, and Wails CLI `2.13.0`. Earlier Go 1.26 patch releases include standard-library vulnerabilities reported by `govulncheck`.
 
 Install frontend dependencies:
 
@@ -220,7 +222,7 @@ build/bin/LivePanel.exe
 
 ## Release Process
 
-LivePanel releases are published by the GitHub Actions Release workflow. The workflow runs frontend tests, frontend build, Go tests, frontend dependency audit, `govulncheck`, Wails Windows installer packaging, release-note validation, artifact checks, and then publishes the GitHub Release when requested.
+LivePanel releases are published by the GitHub Actions Release workflow. The workflow runs frontend tests, frontend build, Go tests, frontend dependency audit, `govulncheck`, Wails Windows installer packaging, isolated app startup smoke, release-note/version validation, artifact checks, and then publishes the GitHub Release when requested.
 
 Before publishing a release:
 
@@ -245,7 +247,7 @@ Example Windows launch using StreamSignal's dev data store and explicit dev tool
 ```powershell
 $env:STREAMSIGNAL_ENV = "dev"
 $env:LIVEPANEL_STREAMSIGNAL_EXECUTABLE = "C:\path\to\StreamSignal.exe"
-$env:LIVEPANEL_TIDEREADER_EXECUTABLE = "C:\path\to\TideReader.Desktop.exe" # or TideReader.exe
+$env:LIVEPANEL_TIDEREADER_EXECUTABLE = "C:\path\to\TideReader.exe" # legacy TideReader.Desktop.exe is also accepted
 $env:LIVEPANEL_TUBERSWITCH_EXECUTABLE = "C:\path\to\TuberSwitch.exe"
 .\build\bin\LivePanel.exe
 ```
@@ -291,8 +293,9 @@ stale process or port conflict before relaunching:
 
 ```cmd
 netstat -ano | findstr :17656
-taskkill /IM TideReader.Desktop.exe /F
 ```
+
+Use the reported PID to identify a stale instance before closing it; do not stop an active stream’s companion app merely because a port is occupied.
 
 TideReader early startup diagnostics are written to:
 
@@ -305,4 +308,9 @@ TideReader early startup diagnostics are written to:
 
 LivePanel forwards action IDs as `X-Request-ID` and publishing idempotency keys. It uses asynchronous publishing only when StreamSignal advertises `async-publishing`, polls the returned operation within the existing five-minute client budget, and never retries a publishing POST automatically. Structured destination results distinguish confirmed publication from failed follow-up work or unknown publication. Safe operation IDs, owner session IDs, error codes and per-destination outcomes are added to the persistent timeline without copying raw messages or content.
 
-TuberSwitch operation confirmation IDs replace refresh-count confirmation when available, with a bounded 30-second wait; older apps retain the existing compatibility behavior. All additive metadata is optional for legacy app versions. The [common protocol contract](./SIP_OBSERVABILITY_V1.md) is shared with the companion-app PRs.
+TuberSwitch operation confirmation IDs replace refresh-count confirmation when available, with a bounded 30-second wait; older apps retain the existing compatibility behavior. All additive metadata is optional for legacy app versions. The [common protocol contract](./SIP_OBSERVABILITY_V1.md) is identical to the contract in the companion apps’ v1.0.0 tags. Application version 1.0.0 retains SIP protocol version 1.
+
+
+## 1.0 Validation
+
+See [RELEASE_VALIDATION.md](RELEASE_VALIDATION.md) for automated test/security/build evidence and the limits of fixture-based integration checks. The Windows Release workflow supports non-publishing packaging validation before tagging. Packages currently have no configured Authenticode signing step; Windows may require approval for an unsigned installer.

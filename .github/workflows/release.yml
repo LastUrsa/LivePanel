@@ -67,6 +67,12 @@ jobs:
             $publishRelease = "${{ github.event.inputs.publish_release }}"
           }
 
+          $productVersion = (Get-Content wails.json -Raw | ConvertFrom-Json).info.productVersion
+          $frontendVersion = (Get-Content frontend/package.json -Raw | ConvertFrom-Json).version
+          if ($version -ne $productVersion -or $version -ne $frontendVersion) {
+            throw "Release version $version must match Wails and frontend versions."
+          }
+
           $releaseDir = "build/bin/release"
           $installerSource = "build/bin/LivePanel-amd64-installer.exe"
           $installerName = "LivePanel-$tag-windows-amd64-installer.exe"
@@ -89,7 +95,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.10'
+          go-version-file: go.mod
           cache: true
 
       - name: Set up Node
@@ -136,6 +142,10 @@ jobs:
         run: |
           $env:Path += ";$(go env GOPATH)\bin;C:\Program Files (x86)\NSIS;C:\Program Files (x86)\NSIS\Bin"
           wails build -clean -platform windows/amd64 -nsis
+
+      - name: Smoke test packaged app startup
+        shell: pwsh
+        run: ./scripts/test-release-startup.ps1 -Version "${{ steps.release_meta.outputs.version }}"
 
       - name: Validate release notes
         shell: pwsh
