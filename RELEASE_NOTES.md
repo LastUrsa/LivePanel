@@ -29,6 +29,7 @@ First stable Windows x64 release for the Starsong companion suite. Existing Live
 - Adds regression coverage for publishing timeouts, cancellation, action failures, status refreshes, and OBS connection reporting.
 - Updates frontend dependencies and Wails to v2.13.0, and requires Go 1.26.10 in local/CI builds to address vulnerability scan findings.
 
+- Includes Windows product/file version resources in the executable and checks them before release.
 - Adds release metadata checks and an isolated packaged-app startup/shutdown smoke before publication.
 
 ### Release Artifacts

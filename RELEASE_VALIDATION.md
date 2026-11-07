@@ -15,7 +15,7 @@ Local candidate validation: 2026-11-07 (America/New_York).
 
 ## Release gate
 
-Before tagging, run the Release workflow with version 1.0.0 and publishing disabled. It checks the metadata, repeats tests and security scans, builds a Windows NSIS installer, and runs `scripts/test-release-startup.ps1` against the packaged app. That smoke uses isolated config/log paths, explicit missing companion executables, and isolated loopback endpoints; it verifies a main window, a stable process, orderly shutdown, and versioned session logs. It cannot launch installed companions or post to providers. The workflow then validates notes, packages the portable ZIP, writes SHA-256 checksums, and verifies/uploads assets. The tag workflow repeats these gates before publication.
+Before tagging, run the Release workflow with version 1.0.0 and publishing disabled. It checks the metadata, repeats tests and security scans, builds a Windows NSIS installer, and runs `scripts/test-release-startup.ps1` against the packaged app. That smoke uses isolated config/log paths, explicit missing companion executables, and isolated loopback endpoints; it requires Windows product/version resources and verifies a main window, a stable process, orderly shutdown, and versioned session logs. It cannot launch installed companions or post to providers. The workflow then validates notes, packages the portable ZIP, writes SHA-256 checksums, and verifies/uploads assets. The tag workflow repeats these gates before publication.
 
 ## Validation boundaries
 
