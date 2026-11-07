@@ -8,6 +8,7 @@ Local candidate validation: 2026-11-07 (America/New_York).
 - Full Go race/coverage suite and `go vet ./...` passed. Coverage: SIP client 82.3%, session logger 74.5%, module service 40.4%, app package 47.8% statements. Coverage is evidence of exercised paths, not a guarantee of complete behavior.
 - Native Windows Go tests and a production build passed in an isolated source mirror.
 - `npm audit`: zero vulnerabilities. Linux and Windows `govulncheck`: no vulnerabilities found in the tested graph.
+- Inert Windows resource fixtures reproduce blank version strings without a `FileVersion` string; including it makes Windows expose the expected file/product fields. The packaged startup gate checks those fields on the real build.
 - Workflow YAML passed actionlint. The release metadata script accepts matching tag/manual versions and rejects mismatches; Wails, npm package and lockfile metadata are aligned to 1.0.0.
 - New regression coverage verifies current TideReader executable priority when a stale legacy executable also exists, legacy fallback, and saved-path precedence.
 - Fixture-based SIP compatibility tests cover all three released companion 1.0 schemas: numeric protocol version 1, capability names, current-profile confirmation/revision metadata, and producer/detection observations. Existing publishing tests cover capability-gated async polling, no repeated publishing POST, uncertain outcomes and legacy behavior.
