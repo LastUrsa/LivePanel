@@ -575,7 +575,7 @@ func moduleDefinitions() []moduleDefinition {
 			Name:           "TideReader",
 			ExecutableEnv:  "LIVEPANEL_TIDEREADER_EXECUTABLE",
 			EndpointEnv:    "LIVEPANEL_TIDEREADER_ENDPOINT",
-			ExecutableName: "TideReader.Desktop.exe",
+			ExecutableName: "TideReader.exe",
 			Endpoints:      localEndpoints(47030, 47039),
 			Candidates:     tideReaderExecutableCandidates,
 		},
@@ -721,21 +721,21 @@ func configuredTideReaderExecutable() string {
 func tideReaderExecutableCandidates() []string {
 	candidates := tideReaderStandardInstallCandidates()
 	candidates = append(candidates, localTideReaderBuildCandidates()...)
-	candidates = append(candidates, legacyInstallCandidates("TideReader", "TideReader.Desktop.exe")...)
 	candidates = append(candidates, legacyInstallCandidates("TideReader", "TideReader.exe")...)
+	candidates = append(candidates, legacyInstallCandidates("TideReader", "TideReader.Desktop.exe")...)
 	return candidates
 }
 
 func tideReaderStandardInstallCandidates() []string {
-	candidates := standardInstallCandidates("TideReader", "TideReader.Desktop.exe")
-	candidates = append(candidates, standardInstallCandidates("TideReader", "TideReader.exe")...)
+	candidates := standardInstallCandidates("TideReader", "TideReader.exe")
+	candidates = append(candidates, standardInstallCandidates("TideReader", "TideReader.Desktop.exe")...)
 	return candidates
 }
 
 func localTideReaderBuildCandidates() []string {
-	names := []string{"TideReader.Desktop.exe", "TideReader.exe", "TideReader.Desktop", "TideReader"}
+	names := []string{"TideReader.exe", "TideReader.Desktop.exe", "TideReader", "TideReader.Desktop"}
 	if runtime.GOOS != "windows" {
-		names = []string{"TideReader.Desktop", "TideReader", "TideReader.Desktop.exe", "TideReader.exe"}
+		names = []string{"TideReader", "TideReader.Desktop", "TideReader.exe", "TideReader.Desktop.exe"}
 	}
 
 	candidates := make([]string, 0, len(names)*4)

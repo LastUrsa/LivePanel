@@ -2,7 +2,20 @@
 
 Release notes are part of the LivePanel release process. Before publishing a release, add a matching `## vX.Y.Z` section here. The release workflow publishes that section as the GitHub Release body and fails if it is missing or empty.
 
-## Unreleased
+## v1.0.0
+
+First stable Windows x64 release for the Starsong companion suite. Existing LivePanel configuration is retained; SIP remains protocol version 1. Install/update companion apps separately.
+
+### Supported Companion Apps
+
+- StreamSignal v1.0.0 or newer.
+- TideReader v1.0.0 or newer.
+- TuberSwitch v1.0.0 or newer.
+- Older SIP apps retain capability-based fallbacks, with reduced feature availability.
+
+### Highlights
+
+- Prefers the released `TideReader.exe` during discovery, avoiding stale legacy executable selection while retaining legacy and explicit-path compatibility.
 
 - Adds optional SIP operation metadata, request correlation, StreamSignal asynchronous publishing/idempotency, per-destination publication/follow-up display and safe logging, and operation-based TuberSwitch confirmation with legacy fallback.
 
@@ -15,6 +28,16 @@ Release notes are part of the LivePanel release process. Before publishing a rel
 - Uses actual OBS connection flags ahead of scene/source summary text, preventing names such as `Offline` from producing a false disconnected indicator after a stream ends.
 - Adds regression coverage for publishing timeouts, cancellation, action failures, status refreshes, and OBS connection reporting.
 - Updates frontend dependencies and Wails to v2.13.0, and requires Go 1.26.10 in local/CI builds to address vulnerability scan findings.
+
+- Adds release metadata checks and an isolated packaged-app startup/shutdown smoke before publication.
+
+### Release Artifacts
+
+- `LivePanel-v1.0.0-windows-amd64-installer.exe`
+- `LivePanel-v1.0.0-windows-amd64-portable.zip`
+- `SHA256SUMS.txt`
+
+See `RELEASE_VALIDATION.md` for automated validation evidence and unperformed interactive acceptance checks. The installer is currently unsigned by the release workflow.
 
 ## v0.2.1
 

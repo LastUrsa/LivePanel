@@ -1,6 +1,6 @@
 # Companion App Troubleshooting API Recommendations
 
-These recommendations are implemented by the companion-app observability branches and the additive [SIP Observability v1 contract](./SIP_OBSERVABILITY_V1.md). Existing APIs remain supported. StreamSignal retains durable publishing history; TideReader keeps a bounded in-memory history, and TuberSwitch exposes its existing OBS-owned avatar source changes as integration results.
+These recommendations are implemented in the released v1.0.0 companion apps and the additive [SIP Observability v1 contract](./SIP_OBSERVABILITY_V1.md). Existing APIs remain supported. StreamSignal retains durable publishing history; TideReader keeps a bounded in-memory history, and TuberSwitch exposes its existing OBS-owned avatar source changes as integration results.
 
 ## Shared SIP Contract
 

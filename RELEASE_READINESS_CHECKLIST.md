@@ -2,25 +2,29 @@
 
 This maintainer checklist is for LivePanel release candidates, packaging, and final publication. Keep user setup guidance in the README and use this file for release execution.
 
+## Current Candidate
+
+Release target: `v1.0.0`; supported companion baseline: StreamSignal, TideReader, and TuberSwitch `v1.0.0` (published stable releases). See [RELEASE_VALIDATION.md](RELEASE_VALIDATION.md) for evidence. Unchecked interactive product/install items are not represented as tested by automated validation.
+
 ## Release Prep
 
-- [ ] Confirm `wails.json` and `frontend/package.json` version metadata match the release version.
-- [ ] Add or update the matching `## vX.Y.Z` section in [RELEASE_NOTES.md](./RELEASE_NOTES.md).
-- [ ] Confirm [README.md](./README.md) lists the current minimum dependent app versions.
-- [ ] Confirm [APP_COMPATIBILITY.md](./APP_COMPATIBILITY.md) includes the release's dependent app requirements.
-- [ ] Confirm the release notes section documents the release's dependent app requirements.
-- [ ] Confirm StreamSignal, TideReader, and TuberSwitch compatible releases are published.
+- [x] Confirm `wails.json` and `frontend/package.json` version metadata match the release version.
+- [x] Add or update the matching `## vX.Y.Z` section in [RELEASE_NOTES.md](./RELEASE_NOTES.md).
+- [x] Confirm [README.md](./README.md) lists the current minimum dependent app versions.
+- [x] Confirm [APP_COMPATIBILITY.md](./APP_COMPATIBILITY.md) includes the release's dependent app requirements.
+- [x] Confirm the release notes section documents the release's dependent app requirements.
+- [x] Confirm StreamSignal, TideReader, and TuberSwitch compatible releases are published.
 - [ ] Confirm no high-severity security or release-blocking issues remain open.
 
 ## Local Validation
 
-- [ ] Run `npm test` from `frontend`.
-- [ ] Run `npm run build` from `frontend`.
-- [ ] Run `go test ./...`.
-- [ ] Run `go test -race ./...`.
-- [ ] Run `go vet ./...`.
-- [ ] Run `npm audit --audit-level=moderate` from `frontend`.
-- [ ] Run `govulncheck ./...`.
+- [x] Run `npm test` from `frontend`.
+- [x] Run `npm run build` from `frontend`.
+- [x] Run `go test ./...`.
+- [x] Run `go test -race ./...`.
+- [x] Run `go vet ./...`.
+- [x] Run `npm audit --audit-level=moderate` from `frontend`.
+- [x] Run `govulncheck ./...`.
 
 ## Product Validation
 
@@ -45,6 +49,7 @@ This maintainer checklist is for LivePanel release candidates, packaging, and fi
 
 ## Packaging And Release
 
+- [ ] Verify the isolated packaged-app startup/shutdown smoke passes.
 - [ ] Run the release workflow manually with `publish_release` disabled for the target version.
 - [ ] Download and inspect the Windows installer, portable zip, and `SHA256SUMS.txt`.
 - [ ] Install the Windows installer on a clean or disposable profile and verify first launch.
