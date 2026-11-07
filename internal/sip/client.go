@@ -198,7 +198,7 @@ func (c *Client) ApplyRedeemsManual(ctx context.Context, redeems []UpdateRedeemR
 
 func (c *Client) Announce(ctx context.Context, fields []UpdateAnnouncementFieldRequest) (AnnounceResponse, error) {
 	var out AnnounceResponse
-	err := c.post(ctx, "/api/v1/announce", AnnounceRequest{Fields: fields}, &out)
+	err := c.postWorkflow(ctx, "/api/v1/announce", AnnounceRequest{Fields: fields}, &out)
 	if err != nil {
 		return AnnounceResponse{}, err
 	}
@@ -207,7 +207,7 @@ func (c *Client) Announce(ctx context.Context, fields []UpdateAnnouncementFieldR
 
 func (c *Client) ConfirmAnnouncement(ctx context.Context, confirmationID string) (AnnounceResponse, error) {
 	var out AnnounceResponse
-	err := c.post(ctx, "/api/v1/announce/confirm", AnnounceConfirmRequest{ConfirmationID: confirmationID}, &out)
+	err := c.postWorkflow(ctx, "/api/v1/announce/confirm", AnnounceConfirmRequest{ConfirmationID: confirmationID}, &out)
 	if err != nil {
 		return AnnounceResponse{}, err
 	}
@@ -225,7 +225,7 @@ func (c *Client) GetAnnounceStatus(ctx context.Context) (AnnounceStatusResponse,
 
 func (c *Client) EndStream(ctx context.Context) (EndStreamResponse, error) {
 	var out EndStreamResponse
-	err := c.post(ctx, "/api/v1/end-stream", map[string]any{}, &out)
+	err := c.postWorkflow(ctx, "/api/v1/end-stream", map[string]any{}, &out)
 	if err != nil {
 		return EndStreamResponse{}, err
 	}
@@ -265,6 +265,16 @@ func (c *Client) FetchSnapshot(ctx context.Context) (Snapshot, error) {
 		Capabilities: capabilities,
 		Status:       status,
 	}, nil
+}
+
+// Posting may involve multiple sequential network requests per destination. Keep
+// discovery/status requests fast without canceling an in-flight publishing workflow.
+func (c *Client) postWorkflow(ctx context.Context, path string, in any, out any) error {
+	httpClient := *c.httpClient
+	httpClient.Timeout = 5 * time.Minute
+	workflowClient := *c
+	workflowClient.httpClient = &httpClient
+	return workflowClient.post(ctx, path, in, out)
 }
 
 func (c *Client) post(ctx context.Context, path string, in any, out any) error {

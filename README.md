@@ -122,6 +122,12 @@ Remote hosts are rejected.
 
 Diagnostics are intentionally separate from Settings. Use the Diagnostics tab for module health, SIP endpoints, resolved executable paths, capabilities, and raw status payloads.
 
+Stream Control shows the last announcement and end-stream result, with errors expanded inline. Immediate action errors remain visible across stale status responses and temporary refresh failures. This is an in-memory activity snapshot, not persistent session logging; restarting LivePanel loses locally retained results, and StreamSignal supplies any available last-run status.
+
+Publishing actions (`Go Live`, confirmation, and `End Stream`) allow up to five minutes on the LivePanel client, separately from short discovery/status requests. StreamSignal and destination services can impose shorter limits. A timeout or lost connection can leave posting outcomes uncertain; check the destination before retrying to avoid duplicates.
+
+OBS readiness uses the reported connection flag before interpreting summary text. Scene/source names such as `Offline` do not mark a connected OBS instance as disconnected. Stopping a stream does not itself mean the OBS WebSocket connection has closed.
+
 ## Manual Controls
 
 LivePanel manual controls are intentionally scoped to the owning app:
@@ -136,7 +142,7 @@ The app detail drawers use SIP capabilities and status payloads to decide which 
 
 ## Development
 
-Use Go `1.26.6` or newer. Earlier Go 1.26 patch releases include standard-library vulnerabilities reported by `govulncheck`.
+Use Go `1.26.10` or newer. Earlier Go 1.26 patch releases include standard-library vulnerabilities reported by `govulncheck`.
 
 Install frontend dependencies:
 

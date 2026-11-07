@@ -508,13 +508,30 @@ function obsStatusReadiness(status: Record<string, unknown>): { value: string; t
   const value =
     firstStatusText(status, ['obsStatus', 'obsSummary', 'obsState', 'obsConnectionStatus']) ||
     firstStatusText(obs, ['status', 'summary', 'state', 'connectionStatus', 'message']);
+  // Scene/source names in the summary can contain words such as "Offline".
+  // The reported connection flag is authoritative, regardless of those names.
+  const connected = typeof status.obsConnected === 'boolean'
+    ? status.obsConnected
+    : typeof obs.connected === 'boolean' ? obs.connected : undefined;
+  if (connected === true) {
+    return { value: value || 'Connected', tone: 'running' };
+  }
+  if (connected === false) {
+    const connectionState = firstStatusText(status, ['obsConnectionState', 'obsConnectionStatus']) ||
+      firstStatusText(obs, ['connectionState', 'connectionStatus']);
+    const reconnecting = /reconnecting|connecting/i.test(connectionState || value);
+    return {
+      value: reconnecting ? 'Reconnecting' : 'Disconnected',
+      tone: reconnecting ? 'warning' : 'offline',
+    };
+  }
   if (!value) {
-    if (booleanValue(status, 'obsConnected', false) || booleanValue(obs, 'connected', false)) {
-      return { value: 'Connected', tone: 'running' };
-    }
     return { value: 'Offline', tone: 'offline' };
   }
   const normalized = value.toLowerCase();
+  if (/^connected(?:\b|:)/i.test(value)) {
+    return { value, tone: 'running' };
+  }
   const offline =
     normalized.includes('offline') ||
     normalized.includes('disconnected') ||
@@ -524,15 +541,12 @@ function obsStatusReadiness(status: Record<string, unknown>): { value: string; t
   if (offline) {
     return { value, tone: 'offline' };
   }
-  if (booleanValue(status, 'obsConnected', false) || booleanValue(obs, 'connected', false)) {
-    return { value, tone: 'running' };
-  }
-  const connected =
+  const connectedSummary =
     normalized.includes('connected') ||
     normalized.includes('ready') ||
     normalized.includes('running') ||
     normalized.includes('available');
-  return { value, tone: connected ? 'running' : 'warning' };
+  return { value, tone: connectedSummary ? 'running' : 'warning' };
 }
 
 function obsReadiness(modules: ModuleInfo[]) {
@@ -625,20 +639,17 @@ function StatusPill({ label, tone = 'neutral' }: { label: string; tone?: 'runnin
 }
 
 function ActivityCard({ title, status }: { title: string; status: AnnounceStatus | EndStreamStatus }) {
-  const failed = Boolean(status.lastRun && !status.success);
+  const failed = Boolean(status.error || (status.lastRun && !status.success));
   return (
     <article>
       <h3>{title}</h3>
       <StatusPill
-        label={!status.lastRun ? 'No activity' : status.success ? 'Success' : 'Failed'}
-        tone={!status.lastRun ? 'neutral' : status.success ? 'running' : 'error'}
+        label={failed ? 'Failed or incomplete' : !status.lastRun ? 'No activity' : 'Success'}
+        tone={failed ? 'error' : !status.lastRun ? 'neutral' : 'running'}
       />
       <span>{formatRun(status.lastRun)}</span>
       {failed && status.error ? (
-        <details className="activity-details">
-          <summary>View Details</summary>
-          <p>{status.error}</p>
-        </details>
+        <p role="alert">{status.error}</p>
       ) : null}
     </article>
   );
@@ -742,6 +753,13 @@ export function Dashboard({
                 <Square aria-hidden="true" />
                 End Stream
               </button>
+            </div>
+          </section>
+
+          <section className="recent-activity" aria-label="Recent StreamSignal activity">
+            <div className="activity-grid" aria-live="polite">
+              <ActivityCard title="Last announcement" status={workflow.announceStatus} />
+              <ActivityCard title="Last end stream" status={workflow.endStreamStatus} />
             </div>
           </section>
 
@@ -1971,8 +1989,6 @@ export default function App() {
       announcementFieldsDirtyRef.current = false;
       announcementFieldBaselineRef.current = {};
       streamSignalProfileKeyRef.current = '';
-      setAnnounceStatus(empty.announceStatus);
-      setEndStreamStatus(empty.endStreamStatus);
       return;
     }
     try {
@@ -2001,8 +2017,8 @@ export default function App() {
       announcementFieldBaselineRef.current = baselineDrafts;
       streamSignalProfileKeyRef.current = nextProfileKey;
       setSelectedProfile((current) => nextCurrentProfile.name || (nextProfiles.includes(current) ? current : ''));
-      setAnnounceStatus(nextAnnounceStatus);
-      setEndStreamStatus(nextEndStreamStatus);
+      setAnnounceStatus((current) => Date.parse(current.lastRun) > (Date.parse(nextAnnounceStatus.lastRun) || 0) ? current : nextAnnounceStatus);
+      setEndStreamStatus((current) => Date.parse(current.lastRun) > (Date.parse(nextEndStreamStatus.lastRun) || 0) ? current : nextEndStreamStatus);
     } catch {
       const empty = emptyWorkflowState();
       setProfiles(empty.profiles);
@@ -2013,8 +2029,6 @@ export default function App() {
       announcementFieldsDirtyRef.current = false;
       announcementFieldBaselineRef.current = {};
       streamSignalProfileKeyRef.current = '';
-      setAnnounceStatus(empty.announceStatus);
-      setEndStreamStatus(empty.endStreamStatus);
     }
   }
 
@@ -2273,42 +2287,56 @@ export default function App() {
     onGoLive: () => {
       void (async () => {
         setWorkflowBusy(true);
-        const response = await announceStreamSignal(fieldOverridesFrom(announcementFields, announcementFieldDrafts));
-        if (response.requiresConfirmation) {
-          setPendingConfirmation(response);
-        } else if (response.success) {
-          resetAnnouncementFieldDrafts.current = true;
-          setAnnounceStatus(await getStreamSignalAnnounceStatus());
-          await load(true);
-        } else {
-          setAnnounceStatus(await getStreamSignalAnnounceStatus());
+        try {
+          const response = await announceStreamSignal(fieldOverridesFrom(announcementFields, announcementFieldDrafts));
+          if (response.requiresConfirmation) {
+            setPendingConfirmation(response);
+          } else {
+            setAnnounceStatus({ ...response, lastRun: new Date().toISOString() });
+            if (response.success) {
+              resetAnnouncementFieldDrafts.current = true;
+              await load(true);
+            }
+          }
+        } catch (error) {
+          setAnnounceStatus({ success: false, lastRun: new Date().toISOString(), error: String(error) });
+        } finally {
+          setWorkflowBusy(false);
         }
-        setWorkflowBusy(false);
       })();
     },
     onConfirmGoLive: () => {
       void (async () => {
-        if (!pendingConfirmation?.confirmationId) {
-          return;
-        }
+        if (!pendingConfirmation?.confirmationId) return;
         setWorkflowBusy(true);
-        const response = await confirmStreamSignalAnnouncement(pendingConfirmation.confirmationId);
-        setPendingConfirmation(null);
-        if (response.success) {
-          resetAnnouncementFieldDrafts.current = true;
-          await load(true);
+        try {
+          const response = await confirmStreamSignalAnnouncement(pendingConfirmation.confirmationId);
+          setPendingConfirmation(null);
+          setAnnounceStatus({ ...response, lastRun: new Date().toISOString() });
+          if (response.success) {
+            resetAnnouncementFieldDrafts.current = true;
+            await load(true);
+          }
+        } catch (error) {
+          setPendingConfirmation(null);
+          setAnnounceStatus({ success: false, lastRun: new Date().toISOString(), error: String(error) });
+        } finally {
+          setWorkflowBusy(false);
         }
-        setAnnounceStatus(await getStreamSignalAnnounceStatus());
-        setWorkflowBusy(false);
       })();
     },
     onCancelConfirmation: () => setPendingConfirmation(null),
     onEndStream: () => {
       void (async () => {
         setWorkflowBusy(true);
-        const response = await endStreamSignalStream();
-        setEndStreamStatus(await getStreamSignalEndStreamStatus());
-        setWorkflowBusy(false);
+        try {
+          const response = await endStreamSignalStream();
+          setEndStreamStatus({ ...response, lastRun: new Date().toISOString() });
+        } catch (error) {
+          setEndStreamStatus({ success: false, lastRun: new Date().toISOString(), error: String(error) });
+        } finally {
+          setWorkflowBusy(false);
+        }
       })();
     },
   };

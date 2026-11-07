@@ -335,3 +335,39 @@ func TestClientLimitsResponseBodies(t *testing.T) {
 		t.Fatalf("expected ErrInvalidResponse for oversized body, got %v", err)
 	}
 }
+
+func TestPublishingWorkflowsOutliveDiscoveryTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(50 * time.Millisecond):
+			_, _ = w.Write([]byte(`{"success":true}`))
+		case <-r.Context().Done():
+		}
+	}))
+	defer server.Close()
+	client := NewClient(server.URL, 10*time.Millisecond)
+	for _, path := range []string{"announce", "confirm", "end-stream"} {
+		t.Run(path, func(t *testing.T) {
+			var err error
+			switch path {
+			case "announce":
+				_, err = client.Announce(context.Background(), nil)
+			case "confirm":
+				_, err = client.ConfirmAnnouncement(context.Background(), "confirmation")
+			case "end-stream":
+				_, err = client.EndStream(context.Background())
+			}
+			if err != nil {
+				t.Fatalf("publishing canceled by discovery timeout: %v", err)
+			}
+		})
+	}
+	if _, err := client.GetAnnounceStatus(context.Background()); err == nil {
+		t.Fatal("status requests must retain the short timeout")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := client.Announce(ctx, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("workflow must respect caller cancellation: %v", err)
+	}
+}

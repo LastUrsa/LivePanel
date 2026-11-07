@@ -17,6 +17,8 @@ This maintainer checklist is for LivePanel release candidates, packaging, and fi
 - [ ] Run `npm test` from `frontend`.
 - [ ] Run `npm run build` from `frontend`.
 - [ ] Run `go test ./...`.
+- [ ] Run `go test -race ./...`.
+- [ ] Run `go vet ./...`.
 - [ ] Run `npm audit --audit-level=moderate` from `frontend`.
 - [ ] Run `govulncheck ./...`.
 
@@ -25,13 +27,15 @@ This maintainer checklist is for LivePanel release candidates, packaging, and fi
 - [ ] Verify LivePanel starts StreamSignal, TideReader, and TuberSwitch in service mode.
 - [ ] Verify each app can be opened with the full UI from LivePanel.
 - [ ] Verify Dashboard profile selection works for all three apps; TuberSwitch remains optimistic while activation settles, confirms the selected profile, and rolls back with an error if confirmation never arrives.
-- [ ] Verify StreamSignal `Go Live` and `End Stream` actions work against a safe test profile.
+- [ ] Verify StreamSignal `Go Live` and `End Stream` actions work against a safe test profile, tolerate multi-request publishing delays, and surface returned/rejected errors on Stream Control without leaving controls busy.
+- [ ] Verify immediate action errors remain visible across stale or failed status refreshes.
 - [ ] Verify StreamSignal announcement fields populate from the selected profile/status data, can be edited for one announcement, and reset when a different profile is selected.
 - [ ] Verify TideReader browser support can be toggled from LivePanel and browser-sourced now-playing data is hidden from the overlay preview while browser support is disabled.
 - [ ] Verify TideReader overlay preview renders local overlay data, honors Smart Text overflow modes, and treats a `0` character limit as unlimited.
 - [ ] Verify TuberSwitch shows only manageable redeems, labels manual changes as temporary, and uses the manual/session path without saving profile changes.
 - [ ] Verify partial TuberSwitch profile activation errors remain visible while LivePanel refreshes the resulting profile, OBS, and redeem state.
 - [ ] Verify the top readiness bar shows OBS as offline/red unless TuberSwitch or another compatible module reports a positive OBS connection state, including boolean and nested OBS status payloads.
+- [ ] Verify a connected OBS instance stays connected in the readiness bar with an `Offline` scene/source after End Stream; genuine disconnections and reconnection attempts remain visible.
 - [ ] Verify Diagnostics shows SIP status, endpoints, capabilities, versions, and executable paths for compatible app versions.
 - [ ] Verify older non-SIP/service-mode app versions do not appear and are covered by README requirements.
 
