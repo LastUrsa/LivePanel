@@ -3,6 +3,7 @@ build/*
 !build/windows/
 build/windows/*
 !build/windows/icon.ico
+!build/windows/info.json
 frontend/dist/
 frontend/node_modules/
 frontend/package.json.md5

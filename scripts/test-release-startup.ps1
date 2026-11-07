@@ -5,6 +5,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $executablePath = (Resolve-Path -LiteralPath $Executable).Path
+$versionInfo = (Get-Item -LiteralPath $executablePath).VersionInfo
+if ($versionInfo.ProductVersion -ne $Version -or $versionInfo.FileVersion -ne $Version -or $versionInfo.ProductName -ne 'LivePanel') {
+    throw 'Packaged executable must contain the expected LivePanel product/version metadata.'
+}
 $smokeRoot = Join-Path $env:TEMP ('LivePanel-release-smoke-' + [Guid]::NewGuid().ToString('N'))
 $logDirectory = Join-Path $smokeRoot 'logs'
 $overrides = @{
