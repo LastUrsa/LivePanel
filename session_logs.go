@@ -68,7 +68,7 @@ func (a *App) observeModule(module modules.Module) {
 	// Only known connection states, never scene/source summaries.
 	if value, ok := module.Status["obsConnectionState"].(string); ok {
 		switch value {
-		case "connected", "disconnected", "reconnecting", "not_configured":
+		case "connected", "disconnected", "reconnecting", "not_configured", "not_running":
 			state.OBSState = value
 		}
 	}

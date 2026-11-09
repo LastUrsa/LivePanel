@@ -524,10 +524,15 @@ function obsStatusReadiness(status: Record<string, unknown>): { value: string; t
   if (connected === false) {
     const connectionState = firstStatusText(status, ['obsConnectionState', 'obsConnectionStatus']) ||
       firstStatusText(obs, ['connectionState', 'connectionStatus']);
+    if (connectionState === 'not_running') {
+      return { value: 'OBS not running', tone: 'offline' };
+    }
     const reconnecting = /reconnecting|connecting/i.test(connectionState || value);
     return {
-      value: reconnecting ? 'Reconnecting' : 'Disconnected',
-      tone: reconnecting ? 'warning' : 'offline',
+      // Background retries can continue indefinitely while OBS is closed.
+      // Readiness reflects the disconnected flag, even during those retries.
+      value: reconnecting ? 'Disconnected (retrying)' : 'Disconnected',
+      tone: 'offline',
     };
   }
   if (!value) {
@@ -541,6 +546,7 @@ function obsStatusReadiness(status: Record<string, unknown>): { value: string; t
     normalized.includes('offline') ||
     normalized.includes('disconnected') ||
     normalized.includes('not connected') ||
+    normalized.includes('not running') ||
     normalized.includes('unavailable') ||
     normalized.includes('missing');
   if (offline) {

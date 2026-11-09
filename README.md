@@ -128,7 +128,7 @@ Stream Control shows the last announcement and end-stream result, with errors ex
 
 Publishing actions (`Go Live`, confirmation, and `End Stream`) allow up to five minutes on the LivePanel client, separately from short discovery/status requests. StreamSignal and destination services can impose shorter limits. A timeout or lost connection can leave posting outcomes uncertain; check the destination before retrying to avoid duplicates.
 
-OBS readiness uses the reported connection flag before interpreting summary text. Scene/source names such as `Offline` do not mark a connected OBS instance as disconnected. Stopping a stream does not itself mean the OBS WebSocket connection has closed.
+OBS readiness uses the reported connection flag before interpreting summary text. Scene/source names such as `Offline` do not mark a connected OBS instance as disconnected. Stopping a stream does not itself mean the OBS WebSocket connection has closed. When OBS is disconnected and TuberSwitch keeps attempting to connect, readiness stays red and shows `Disconnected (retrying)`, including with older TuberSwitch versions when OBS is closed. Process-aware TuberSwitch versions pause local connection attempts while OBS is closed; LivePanel shows `OBS not running` in red until OBS starts.
 
 ## Session Logs
 
