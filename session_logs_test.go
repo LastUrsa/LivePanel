@@ -190,3 +190,19 @@ func TestProducerDependencyTimestampsDoNotFloodTheLog(t *testing.T) {
 		t.Fatal("dependency content leaked")
 	}
 }
+
+func TestOBSNotRunningTransitionIsLogged(t *testing.T) {
+	dir := t.TempDir()
+	l := sessionlog.New(dir)
+	a := &App{logs: l}
+	a.observeModule(modules.Module{ID: "tuberswitch", Running: true, Healthy: true, Status: map[string]any{"obsConnected": false, "obsConnectionState": "not_running"}})
+	l.Close()
+	records := appLogRecords(t, dir)
+	for _, record := range records {
+		state, _ := record["state"].(map[string]any)
+		if state["obs_state"] == "not_running" && state["obs_connected"] == false {
+			return
+		}
+	}
+	t.Fatal("missing OBS not_running transition")
+}

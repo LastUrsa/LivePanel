@@ -1093,6 +1093,7 @@ describe('App workflows', () => {
 
   it.each([
     { obsConnected: true, obsSummary: 'Connected: Offline / Stream ended' },
+    { obsConnected: true, obsConnectionState: 'not_running', obsSummary: 'Connected: Offline / Stream ended' },
     { obs: { connected: true, summary: 'Connected: Offline / Stream ended' } },
     { obsSummary: 'Connected: Offline / Stream ended' },
   ])('keeps OBS connected for an offline scene: %j', async (status) => {
@@ -1122,16 +1123,35 @@ describe('App workflows', () => {
     expect(within(obsItem).getByText('Disconnected')).toBeInTheDocument();
   });
 
-  it('shows a reconnecting OBS connection as awaiting recovery', async () => {
+  it.each([
+    { obsConnected: false, obsConnectionState: 'not_running', obsSummary: 'OBS not running' },
+    { obs: { connected: false, connectionState: 'not_running', summary: 'OBS not running' } },
+    { obsSummary: 'OBS not running' },
+  ])('shows OBS not running as offline: %j', async (status) => {
     vi.mocked(api.refreshModules).mockResolvedValue([
-      moduleFixture(), tideReaderModuleFixture(),
-      tuberSwitchModuleFixture({ status: { obsConnected: false, obsConnectionState: 'reconnecting', obsSummary: 'OBS reconnecting' } }),
+      moduleFixture(), tideReaderModuleFixture(), tuberSwitchModuleFixture({ status }),
     ]);
     render(<App />);
     const readiness = await screen.findByLabelText('Stream readiness');
     const obsItem = within(readiness).getByText('OBS').closest('article') as HTMLElement;
-    expect(obsItem).toHaveClass('readiness-warning');
-    expect(within(obsItem).getByText('Reconnecting')).toBeInTheDocument();
+    expect(obsItem).toHaveClass('readiness-offline');
+    expect(within(obsItem).getByText('OBS not running')).toBeInTheDocument();
+  });
+
+  it.each([
+    { obsConnected: false, obsConnectionState: 'reconnecting', obsSummary: 'OBS reconnecting' },
+    { obs: { connected: false, connectionState: 'reconnecting', summary: 'OBS reconnecting' } },
+    { obsConnected: false, obsSummary: 'OBS reconnecting' },
+  ])('shows disconnected OBS as offline during background retries: %j', async (status) => {
+    vi.mocked(api.refreshModules).mockResolvedValue([
+      moduleFixture(), tideReaderModuleFixture(),
+      tuberSwitchModuleFixture({ status }),
+    ]);
+    render(<App />);
+    const readiness = await screen.findByLabelText('Stream readiness');
+    const obsItem = within(readiness).getByText('OBS').closest('article') as HTMLElement;
+    expect(obsItem).toHaveClass('readiness-offline');
+    expect(within(obsItem).getByText('Disconnected (retrying)')).toBeInTheDocument();
   });
 
   it('starts installed offline modules when auto-start is enabled', async () => {
