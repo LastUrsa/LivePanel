@@ -8,7 +8,7 @@ Today, LivePanel can start StreamSignal, TideReader, and TuberSwitch in service 
 
 ## App Requirements
 
-LivePanel v1.0.0 supports Windows x64 with Microsoft WebView2 Runtime and the stable companion releases below. Install the companion apps separately. Older SIP/service-mode versions may still be discovered through compatibility fallbacks, but can lack operation metadata or controls; they are outside the 1.0 supported baseline.
+LivePanel v1.0.1 supports Windows x64 with Microsoft WebView2 Runtime and the stable companion releases below. Install the companion apps separately. Older SIP/service-mode versions may still be discovered through compatibility fallbacks, but can lack operation metadata or controls; they are outside the 1.0 supported baseline.
 
 | App | Supported Version |
 | --- | --- |
@@ -128,7 +128,7 @@ Stream Control shows the last announcement and end-stream result, with errors ex
 
 Publishing actions (`Go Live`, confirmation, and `End Stream`) allow up to five minutes on the LivePanel client, separately from short discovery/status requests. StreamSignal and destination services can impose shorter limits. A timeout or lost connection can leave posting outcomes uncertain; check the destination before retrying to avoid duplicates.
 
-OBS readiness uses the reported connection flag before interpreting summary text. Scene/source names such as `Offline` do not mark a connected OBS instance as disconnected. Stopping a stream does not itself mean the OBS WebSocket connection has closed. When OBS is disconnected and TuberSwitch keeps attempting to connect, readiness stays red and shows `Disconnected (retrying)`, including with older TuberSwitch versions when OBS is closed. Process-aware TuberSwitch versions pause local connection attempts while OBS is closed; LivePanel shows `OBS not running` in red until OBS starts.
+OBS readiness uses the reported connection flag before interpreting summary text. Scene/source names such as `Offline` do not mark a connected OBS instance as disconnected. Stopping a stream does not itself mean the OBS WebSocket connection has closed. When OBS is disconnected and TuberSwitch keeps attempting to connect, readiness stays red and shows `Disconnected (retrying)`, including with older TuberSwitch versions when OBS is closed. TuberSwitch v1.0.1 and newer pause local connection attempts while OBS is closed; LivePanel shows `OBS not running` in red until OBS starts.
 
 ## Session Logs
 
@@ -308,7 +308,7 @@ TideReader early startup diagnostics are written to:
 
 LivePanel forwards action IDs as `X-Request-ID` and publishing idempotency keys. It uses asynchronous publishing only when StreamSignal advertises `async-publishing`, polls the returned operation within the existing five-minute client budget, and never retries a publishing POST automatically. Structured destination results distinguish confirmed publication from failed follow-up work or unknown publication. Safe operation IDs, owner session IDs, error codes and per-destination outcomes are added to the persistent timeline without copying raw messages or content.
 
-TuberSwitch operation confirmation IDs replace refresh-count confirmation when available, with a bounded 30-second wait; older apps retain the existing compatibility behavior. All additive metadata is optional for legacy app versions. The [common protocol contract](./SIP_OBSERVABILITY_V1.md) is identical to the contract in the companion apps’ v1.0.0 tags. Application version 1.0.0 retains SIP protocol version 1.
+TuberSwitch operation confirmation IDs replace refresh-count confirmation when available, with a bounded 30-second wait; older apps retain the existing compatibility behavior. All additive metadata is optional for legacy app versions. The [common protocol contract](./SIP_OBSERVABILITY_V1.md) is identical to the contract in the companion apps’ v1.0.0 tags. Application version 1.0.1 retains SIP protocol version 1.
 
 
 ## 1.0 Validation

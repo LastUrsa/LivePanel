@@ -4,7 +4,7 @@ This maintainer checklist is for LivePanel release candidates, packaging, and fi
 
 ## Current Candidate
 
-Release target: `v1.0.0`; supported companion baseline: StreamSignal, TideReader, and TuberSwitch `v1.0.0` (published stable releases). See [RELEASE_VALIDATION.md](RELEASE_VALIDATION.md) for evidence. Unchecked interactive product/install items are not represented as tested by automated validation.
+Release target: `v1.0.1`; supported companion baseline: StreamSignal, TideReader, and TuberSwitch `v1.0.0` (published stable releases). See [RELEASE_VALIDATION.md](RELEASE_VALIDATION.md) for evidence. Unchecked interactive product/install items are not represented as tested by automated validation.
 
 ## Release Prep
 

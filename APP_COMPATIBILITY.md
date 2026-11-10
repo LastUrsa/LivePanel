@@ -6,6 +6,7 @@ Each matching release note entry should also include the app requirements for th
 
 | LivePanel Version | StreamSignal | TideReader | TuberSwitch | Notes |
 | --- | --- | --- | --- | --- |
+| v1.0.1 | v1.0.0 or newer | v1.0.0 or newer | v1.0.0 or newer | OBS readiness distinguishes unavailable/retrying connections from connected OBS. TuberSwitch v1.0.1 adds process-aware retries and explicit OBS not-running status. |
 | v1.0.0 | v1.0.0 or newer | v1.0.0 or newer | v1.0.0 or newer | Stable supported baseline with SIP v1 observability, asynchronous publishing, persistent session logs, and current TideReader executable discovery. Older SIP apps retain capability-based fallbacks but are not the supported 1.0 baseline. |
 | v0.2.1 | v0.5.1 or newer | v0.6.0 or newer | v0.7.2 or newer | Fixes OBS readiness ownership and hardens TuberSwitch profile confirmation, partial-failure reporting, and temporary redeem state. |
 | v0.2.0 | v0.5.1 or newer | v0.6.0 or newer | v0.7.1 or newer | Adds StreamSignal one-time announcement field overrides, TideReader browser-support and Smart Text preview data, and TuberSwitch manageable redeems with the manual/session endpoint. |

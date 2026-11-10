@@ -1,4 +1,17 @@
-# LivePanel 1.0.0 Release Validation
+# LivePanel 1.0.1 Release Validation
+
+Candidate validation: 2026-11-09 (America/New_York).
+
+- Frontend: 70 tests passed; TypeScript/Vite production build passed.
+- Full Go race/coverage tests and `go vet ./...` passed. New regressions cover flat/nested OBS state, summary-only compatibility, background retries, authoritative connection flags, and logging `not_running`.
+- `npm audit --audit-level=moderate`: zero vulnerabilities; `govulncheck ./...`: no known vulnerabilities found.
+- Wails, frontend package, and lockfile versions are aligned to 1.0.1. SIP protocol remains version 1; TuberSwitch 1.0.0 remains supported, with 1.0.1 recommended for process-aware OBS retries.
+
+Before tagging, the manual Release workflow must pass on this revision with version 1.0.1 and publishing disabled. It repeats tests/scans, builds the Windows installer, checks packaged startup/version resources in isolation, and validates notes/assets/checksums. The tag workflow repeats these gates before publication. GitHub Actions records provide evidence for the exact revision.
+
+No live OBS/Twitch session, production install/upgrade, or interactive UI acceptance is claimed. The historical validation boundaries below still apply.
+
+## Historical: LivePanel 1.0.0 Release Validation
 
 Local candidate validation: 2026-11-07 (America/New_York).
 

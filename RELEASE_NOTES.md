@@ -2,6 +2,27 @@
 
 Release notes are part of the LivePanel release process. Before publishing a release, add a matching `## vX.Y.Z` section here. The release workflow publishes that section as the GitHub Release body and fails if it is missing or empty.
 
+## v1.0.1
+
+### OBS readiness fix
+
+- Shows red `OBS not running` when TuberSwitch v1.0.1 reports that local OBS is closed.
+- Shows red `Disconnected (retrying)` while an unavailable OBS connection is being retried, including with older TuberSwitch versions.
+- Records the new OBS state in persistent session logs and preserves connected-flag precedence over scene/source summaries.
+
+### Supported companion apps
+
+- StreamSignal v1.0.0 or newer.
+- TideReader v1.0.0 or newer.
+- TuberSwitch v1.0.0 or newer; update to v1.0.1 for process-aware local OBS retries and `OBS not running` status.
+- SIP remains protocol version 1; existing configuration is retained.
+
+### Validation and downloads
+
+- All 70 frontend tests, production build, Go race/coverage tests, and Go vet passed. Dependency audits and vulnerability scans found no known vulnerabilities.
+- Windows release packaging validates startup and version resources before publication. See `RELEASE_VALIDATION.md` for scope and evidence.
+- Downloads: `LivePanel-v1.0.1-windows-amd64-installer.exe`, `LivePanel-v1.0.1-windows-amd64-portable.zip`, and `SHA256SUMS.txt`.
+
 ## v1.0.0
 
 First stable Windows x64 release for the Starsong companion suite. Existing LivePanel configuration is retained; SIP remains protocol version 1. Install/update companion apps separately.
