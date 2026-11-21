@@ -18,7 +18,7 @@ func main() {
 
 	err := wails.Run(&options.App{
 		Title:  "LivePanel",
-		Width:  1180,
+		Width:  1260,
 		Height: 760,
 		AssetServer: &assetserver.Options{
 			Assets: assets,

@@ -286,8 +286,8 @@ func TestAppRefreshModulesUsesConfiguredStreamSignalEndpoint(t *testing.T) {
 	app := NewApp()
 	modules := app.RefreshModules()
 
-	if len(modules) != 3 {
-		t.Fatalf("expected three managed modules, got %+v", modules)
+	if len(modules) != 4 || findModule(modules, "lupusaria") == nil {
+		t.Fatalf("expected four managed modules including LupusAria, got %+v", modules)
 	}
 	streamSignal := findModule(modules, "streamsignal")
 	if streamSignal == nil || streamSignal.Name != "StreamSignal" || !streamSignal.Healthy {
@@ -295,7 +295,7 @@ func TestAppRefreshModulesUsesConfiguredStreamSignalEndpoint(t *testing.T) {
 	}
 	listed := app.GetModules()
 	listedStreamSignal := findModule(listed, "streamsignal")
-	if len(listed) != 3 || listedStreamSignal == nil || listedStreamSignal.Endpoint != server.URL {
+	if len(listed) != 4 || listedStreamSignal == nil || listedStreamSignal.Endpoint != server.URL {
 		t.Fatalf("expected refreshed module to be listed, got %+v", listed)
 	}
 }

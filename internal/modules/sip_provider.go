@@ -210,6 +210,10 @@ func (p *SIPProvider) Refresh(ctx context.Context) (Module, error) {
 			lastErr = err
 			continue
 		}
+		if p.entry.ID == "lupusaria" && snapshot.App.AppID != p.entry.ID {
+			lastErr = fmt.Errorf("configured SIP endpoint did not identify as LupusAria")
+			continue
+		}
 		return moduleFromSnapshot(module, snapshot), nil
 	}
 	if lastErr == nil {

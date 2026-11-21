@@ -1,6 +1,6 @@
 module LivePanel
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/wailsapp/wails/v2 v2.13.0

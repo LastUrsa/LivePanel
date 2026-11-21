@@ -2,7 +2,7 @@
 
 LivePanel is a local desktop control panel for Starsong Tools.
 
-LivePanel brings status, app launching, profiles, and common stream-session actions for StreamSignal, TideReader, and TuberSwitch into one Windows desktop panel.
+LivePanel brings status, app launching, profiles, and common stream-session actions for StreamSignal, TideReader, TuberSwitch, and LupusAria into one Windows desktop panel.
 
 Today, LivePanel can start StreamSignal, TideReader, and TuberSwitch in service mode, show module status, switch active profiles, send StreamSignal announcements with one-time field edits, run the StreamSignal end-stream workflow, toggle app-level TideReader browser support, temporarily adjust manageable TuberSwitch redeems, and preview the active TideReader overlay without opening the full tool interfaces.
 
@@ -20,7 +20,7 @@ Update this table for each LivePanel release. Historical per-release requirement
 
 ## What LivePanel Does
 
-- Starts StreamSignal, TideReader, and TuberSwitch with `--service`.
+- Starts StreamSignal, TideReader, TuberSwitch, and LupusAria with `--service`.
 - Opens each app with `--show` when the full UI is needed.
 - Shows module health, active profiles, app detail drawers, SIP endpoints, resolved executable paths, capabilities, and raw status payloads.
 - Switches StreamSignal, TideReader, and TuberSwitch profiles for the current stream session.
@@ -36,7 +36,7 @@ LivePanel does not store StreamSignal credentials, TideReader overlay/profile da
 
 ## Local Connections
 
-LivePanel talks to StreamSignal, TideReader, and TuberSwitch over a local HTTP interface called SIP, short for **Starsong Integration Protocol**.
+LivePanel talks to StreamSignal, TideReader, TuberSwitch, and LupusAria over a local HTTP interface called SIP, short for **Starsong Integration Protocol**.
 
 For this repository, the important part is simple: SIP is the local contract LivePanel uses to ask tools for status and to trigger tool-owned actions. It is not a public web API, and LivePanel only accepts local loopback SIP endpoints.
 
@@ -158,7 +158,7 @@ The app detail drawers use SIP capabilities and status payloads to decide which 
 
 ## Development
 
-Use Go `1.26.10` or newer, Node.js 24, and Wails CLI `2.13.0`. Earlier Go 1.26 patch releases include standard-library vulnerabilities reported by `govulncheck`.
+Use Go `1.26.11` or newer, Node.js 24, and Wails CLI `2.13.0`. Earlier Go 1.26 patch releases include standard-library vulnerabilities reported by `govulncheck`.
 
 Install frontend dependencies:
 
@@ -303,6 +303,12 @@ TideReader early startup diagnostics are written to:
 %APPDATA%\TideReader\logs\startup.log
 ```
 
+
+## LupusAria
+
+Install a LupusAria build that supports SIP v1 and configure Twitch in its desktop app first. LivePanel discovers `LupusAria.exe` and checks `http://127.0.0.1:47050`. **Settings → Module Locations** can override the executable. The `LIVEPANEL_LUPUSARIA_EXECUTABLE` and `LIVEPANEL_LUPUSARIA_ENDPOINT` environment variables can override discovery.
+
+**Go Live** starts the chat bot once the action is committed. **End Stream** stops the bot and leaves the service available. The stream activity area shows LupusAria's outcome separately from StreamSignal's. Select the details icon on the LupusAria card to change persistent feature switches and inspect recent warnings and errors. Diagnostics shows service availability and the bot's reported state. If the service cannot start, check `logs/sip-startup.log` beside the LupusAria configuration.
 
 ## SIP Observability Compatibility
 

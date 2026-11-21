@@ -1,5 +1,9 @@
 import {
   ActivateStreamSignalProfile,
+  GetLupusAriaFeatures,
+  GetLupusAriaLogs,
+  SetLupusAriaFeature,
+  SetLupusAriaRunning,
   ActivateTideReaderProfile,
   ActivateTuberSwitchProfile,
   ApplyTuberSwitchRedeemsManual,
@@ -296,3 +300,18 @@ export function getStreamSignalEndStreamStatus(): Promise<EndStreamStatus> {
 export function openLogsFolder(): Promise<void> { return OpenLogsFolder(); }
 export function exportSessionLogs(): Promise<string> { return ExportSessionLogs(); }
 export function getSessionLogWarning(): Promise<string> { return GetSessionLogWarning(); }
+
+export type LupusAriaFeature = { id: string; label: string; enabled: boolean; effective: boolean };
+export type LupusAriaLog = { at: string; level: string; message: string; requestId?: string };
+export type LupusAriaResponse = {
+  success: boolean;
+  botState?: string;
+  error?: string;
+  features?: LupusAriaFeature[];
+  logs?: LupusAriaLog[];
+};
+
+export const getLupusAriaFeatures = (): Promise<LupusAriaResponse> => GetLupusAriaFeatures();
+export const getLupusAriaLogs = (): Promise<LupusAriaResponse> => GetLupusAriaLogs();
+export const setLupusAriaFeature = (id: string, enabled: boolean): Promise<LupusAriaResponse> => SetLupusAriaFeature(id, enabled);
+export const setLupusAriaRunning = (start: boolean): Promise<LupusAriaResponse> => SetLupusAriaRunning(start);

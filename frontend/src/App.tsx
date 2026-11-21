@@ -30,6 +30,7 @@ import {
   openLogsFolder,
   exportSessionLogs,
   getSessionLogWarning,
+  setLupusAriaRunning,
   getAutoStartManagedModules,
   getModuleExecutableConfigs,
   getStreamSignalAnnounceStatus,
@@ -65,6 +66,8 @@ import {
   type TideReaderOverlaySnapshot,
 } from './lib/api/livepanel';
 import './App.css';
+import { LupusAriaDrawer, lupusAriaStatus } from './LupusAriaDrawer';
+import lupusAriaIcon from './assets/images/LupusAriaIcon.png';
 import livePanelIcon from './assets/images/LivePanelIcon.png';
 import streamSignalIcon from './assets/images/StreamSignalIcon.png';
 import tideReaderIcon from './assets/images/TideReaderIcon.png';
@@ -157,7 +160,7 @@ type PendingTuberSwitchProfile = {
  expiresAt?: number;
 };
 
-type ProfilePreviewTarget = 'streamsignal' | 'tidereader' | 'tuberswitch';
+type ProfilePreviewTarget = 'streamsignal' | 'tidereader' | 'tuberswitch' | 'lupusaria';
 
 const emptyTideReaderOverlay: TideReaderOverlaySnapshot = {
   available: false,
@@ -690,9 +693,10 @@ export function Dashboard({
   tideReaderWorkflow,
   tuberSwitchWorkflow,
   tideReaderOverlay = emptyTideReaderOverlay,
+  lupusActivity,
   onOpen,
   onRefresh,
-}: { modules: ModuleInfo[]; workflow: StreamSignalWorkflow; tideReaderWorkflow: TideReaderWorkflow; tuberSwitchWorkflow?: TideReaderWorkflow; tideReaderOverlay?: TideReaderOverlaySnapshot } & Pick<ModuleActions, 'onOpen' | 'onRefresh'>) {
+}: { modules: ModuleInfo[]; workflow: StreamSignalWorkflow; tideReaderWorkflow: TideReaderWorkflow; tuberSwitchWorkflow?: TideReaderWorkflow; tideReaderOverlay?: TideReaderOverlaySnapshot; lupusActivity?: { text: string; error: boolean } } & Pick<ModuleActions, 'onOpen' | 'onRefresh'>) {
   tuberSwitchWorkflow = tuberSwitchWorkflow ?? {
     profiles: [],
     currentProfile: { id: '', name: '' },
@@ -704,6 +708,7 @@ export function Dashboard({
   const streamSignal = streamSignalModule(modules);
   const tideReader = tideReaderModule(modules);
   const tuberSwitch = tuberSwitchModule(modules);
+  const lupusAria = modules.find(module => module.id === 'lupusaria');
   const activeProfileName = workflow.currentProfile.name || statusValue(streamSignal?.status ?? {}, 'activeProfile');
   const goLiveDisabled = !streamSignal?.running || !activeProfileName || workflow.busy;
   const setupMessage = streamSetupMessage(modules, workflow, tideReaderWorkflow, tuberSwitchWorkflow);
@@ -714,7 +719,7 @@ export function Dashboard({
       <div className="page-heading">
         <div>
           <h1 id="dashboard-title">Stream Control</h1>
-          <p>Profiles, overlays, and avatar setup for this session.</p>
+          <p>Profiles, overlays, avatar, and chat bot setup for this session.</p>
         </div>
       </div>
 
@@ -771,6 +776,15 @@ export function Dashboard({
                 onSelectProfile={tuberSwitchWorkflow.onSelectProfile}
                 onPreview={() => setDetailTarget('tuberswitch')}
               />
+              <SetupProfileCard
+                title="Chat bot"
+                moduleName="LupusAria"
+                icon={lupusAriaIcon}
+                module={lupusAria ?? null}
+                botStatus={lupusAriaStatus(lupusAria)}
+                selected={detailTarget === 'lupusaria'}
+                onPreview={() => setDetailTarget('lupusaria')}
+              />
             </div>
 
             <div className="primary-actions setup-actions">
@@ -778,14 +792,15 @@ export function Dashboard({
                 <Radio aria-hidden="true" />
                 Go Live
               </button>
-              <button className="button-danger" type="button" onClick={workflow.onEndStream} disabled={goLiveDisabled}>
+              <button className="button-danger" type="button" onClick={workflow.onEndStream} disabled={workflow.busy || (goLiveDisabled && lupusAria?.status?.botState !== 'running')}>
                 <Square aria-hidden="true" />
                 End Stream
               </button>
             </div>
           </section>
 
-          <section className="recent-activity" aria-label="Recent StreamSignal activity">
+          <section className="recent-activity" aria-label="Recent stream activity">
+            {lupusActivity ? <p role={lupusActivity.error ? 'alert' : 'status'}>{lupusActivity.text}</p> : null}
             <div className="activity-grid" aria-live="polite">
               <ActivityCard title="Last announcement" status={workflow.announceStatus} />
               <ActivityCard title="Last end stream" status={workflow.endStreamStatus} />
@@ -841,7 +856,7 @@ function streamSetupMessage(modules: ModuleInfo[], workflow: StreamSignalWorkflo
 }
 
 function onlineModuleCount(modules: ModuleInfo[]) {
-  return [streamSignalModule(modules), tideReaderModule(modules), tuberSwitchModule(modules)].filter((module) => module?.running).length;
+  return [streamSignalModule(modules), tideReaderModule(modules), tuberSwitchModule(modules), modules.find(module => module.id === 'lupusaria')].filter((module) => module?.running).length;
 }
 
 function readinessValue(module: ModuleInfo | null, profileName: string) {
@@ -870,12 +885,13 @@ function SetupProfileCard({
   icon,
   module,
   profiles,
-  selectedProfile,
-  currentProfile,
-  busy,
+  selectedProfile = '',
+  currentProfile = '',
+  busy = false,
   error,
   hasSessionChanges,
   statusBadge,
+  botStatus,
   selected,
   onSelectProfile,
   onPreview,
@@ -884,15 +900,16 @@ function SetupProfileCard({
   moduleName: string;
   icon: string;
   module: ModuleInfo | null;
-  profiles: string[];
-  selectedProfile: string;
-  currentProfile: string;
-  busy: boolean;
+  profiles?: string[];
+  selectedProfile?: string;
+  currentProfile?: string;
+  busy?: boolean;
   error?: string;
   hasSessionChanges?: boolean;
   statusBadge?: string;
+  botStatus?: string;
   selected: boolean;
-  onSelectProfile: (profile: string) => void;
+  onSelectProfile?: (profile: string) => void;
   onPreview: () => void;
 }) {
   const offline = !module?.running;
@@ -900,34 +917,42 @@ function SetupProfileCard({
   return (
     <article className={`setup-profile-card ${selected ? 'selected' : ''}`}>
       <div className="setup-profile-header">
-        <div className="setup-profile-label-row">
-          <span>{title}</span>
-          <button type="button" className={`detail-icon-button ${hasSessionChanges ? 'has-session-changes' : ''}`} onClick={onPreview} aria-label={`View ${moduleName} app details`}>
-            <Eye aria-hidden="true" />
-            {hasSessionChanges ? <span className="session-change-dot" aria-hidden="true" /> : null}
-          </button>
-        </div>
+        <span>{title}</span>
         <img className="module-hero-icon" src={icon} alt="" aria-hidden="true" />
       </div>
-      <h3>{moduleName}</h3>
-      <label className="profile-select-label">
-        <span className="sr-only">{moduleName} profile</span>
-        <select value={selectedProfile} onChange={(event) => onSelectProfile(event.currentTarget.value)} disabled={offline || busy}>
-          <option value="">Select profile</option>
-          {profiles.map((profile) => (
-            <option value={profile} key={profile}>
-              {profile}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="setup-profile-name">
+        <h3>{moduleName}</h3>
+        <button type="button" className={`detail-icon-button ${hasSessionChanges ? 'has-session-changes' : ''}`} onClick={onPreview} aria-label={`View ${moduleName} app details`}>
+          <Eye aria-hidden="true" />
+          {hasSessionChanges ? <span className="session-change-dot" aria-hidden="true" /> : null}
+        </button>
+      </div>
+      <div className="setup-profile-control">
+        {profiles && onSelectProfile ? (
+          <label className="profile-select-label">
+            <span className="sr-only">{moduleName} profile</span>
+            <select value={selectedProfile} onChange={(event) => onSelectProfile(event.currentTarget.value)} disabled={offline || busy}>
+              <option value="">Select profile</option>
+              {profiles.map((profile) => (
+                <option value={profile} key={profile}>
+                  {profile}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
       <div className="setup-profile-footer">
         <div className="setup-profile-status-row">
-          <span className={offline ? 'inactive' : needsProfile ? 'warning-dot' : 'active-dot'}>{offline ? `${moduleName} unavailable` : needsProfile ? 'Needs profile' : 'Active'}</span>
+          {botStatus ? (
+            <span className={module?.status.botState === 'running' ? 'active-dot' : botStatus === 'Bot failed' ? 'warning-dot' : 'inactive'}>{botStatus}</span>
+          ) : (
+            <span className={offline ? 'inactive' : needsProfile ? 'warning-dot' : 'active-dot'}>{offline ? 'Unavailable' : needsProfile ? 'Needs profile' : 'Active'}</span>
+          )}
           {hasSessionChanges ? <span className="session-change-pill">Manual edit</span> : null}
           {!offline && statusBadge ? <span className="app-state-pill">{statusBadge}</span> : null}
         </div>
-        {needsProfile ? null : <small>{offline ? 'Offline' : currentProfile}</small>}
+        {!botStatus && !offline && currentProfile ? <small>{currentProfile}</small> : null}
       </div>
       {error ? <p className="module-inline-message error">{error}</p> : null}
     </article>
@@ -951,7 +976,7 @@ function TopbarReadiness({ modules }: { modules: ModuleInfo[] }) {
   const currentOBSReadiness = obsReadiness(modules);
   return (
     <div className="topbar-readiness" aria-label="Stream readiness">
-      <ReadinessItem icon="modules" label="Modules" value={`${onlineCount} / 3`} tone={onlineCount === 3 ? 'running' : 'warning'} />
+      <ReadinessItem icon="modules" label="Modules" value={`${onlineCount} / ${modules.some(m => m.id === 'lupusaria') ? 4 : 3}`} tone={onlineCount === (modules.some(m => m.id === 'lupusaria') ? 4 : 3) ? 'running' : 'warning'} />
       <ReadinessItem icon="obs" label="OBS" value={currentOBSReadiness.value} tone={currentOBSReadiness.tone} />
       <ReadinessItem icon="internet" label="Internet" value={statusValue(streamSignal?.status ?? {}, 'internetStatus') || 'Stable'} tone="running" />
       <ReadinessItem icon="twitch" label="Twitch" value={statusValue(streamSignal?.status ?? {}, 'twitchStatus') || 'Connected'} tone="running" />
@@ -960,6 +985,7 @@ function TopbarReadiness({ modules }: { modules: ModuleInfo[] }) {
 }
 
 function moduleVisual(id: string) {
+  if (id === 'lupusaria') return { icon: lupusAriaIcon, role: 'Twitch chat bot' };
   if (id === 'tidereader') {
     return { icon: tideReaderIcon, role: 'Now Playing Overlay' };
   }
@@ -1101,6 +1127,7 @@ function ProfileDetailDrawer({
         </div>
         {target === 'streamsignal' ? <StreamSignalPreview module={streamSignalModule(modules)} workflow={workflow} onOpen={onOpen} onRefresh={onRefresh} /> : null}
         {target === 'tidereader' ? <TideReaderPreview module={tideReaderModule(modules)} workflow={tideReaderWorkflow} overlaySnapshot={tideReaderOverlay} onOpen={onOpen} onRefresh={onRefresh} /> : null}
+        {target === 'lupusaria' ? <LupusAriaDrawer module={modules.find(module => module.id === 'lupusaria')} onRefresh={onRefresh} /> : null}
         {target === 'tuberswitch' ? <TuberSwitchPreview module={tuberSwitchModule(modules)} workflow={tuberSwitchWorkflow} onOpen={onOpen} onRefresh={onRefresh} /> : null}
       </aside>
     </div>
@@ -1108,6 +1135,7 @@ function ProfileDetailDrawer({
 }
 
 function profileDetailMeta(target: ProfilePreviewTarget, modules: ModuleInfo[], workflow: StreamSignalWorkflow, tideReaderWorkflow: TideReaderWorkflow, tuberSwitchWorkflow: TideReaderWorkflow) {
+  if (target === 'lupusaria') return { icon: lupusAriaIcon, title: 'LupusAria', subtitle: 'Twitch chat bot' };
   if (target === 'tidereader') {
     return {
       icon: tideReaderIcon,
@@ -1751,7 +1779,7 @@ function ModuleLocationCard({
   useEffect(() => {
     setDraftPath(config.executablePath);
   }, [config.executablePath]);
-  const icon = config.id === 'tidereader' ? tideReaderIcon : config.id === 'tuberswitch' ? tuberSwitchIcon : streamSignalIcon;
+  const icon = moduleVisual(config.id).icon;
   const sourceLabel = config.pathSource === 'environment' ? 'Environment' : config.pathSource === 'configured' ? 'Configured' : config.pathSource === 'detected' ? 'Detected' : 'Fallback';
   function commitDraft() {
     if (draftPath !== config.executablePath) {
@@ -1901,9 +1929,12 @@ function DiagnosticsContent({ modules, onStart, onOpen, onRefresh }: { modules: 
               <dd>{installedLabel(module)}</dd>
             </div>
             <div>
-              <dt>Running</dt>
+              <dt>{module.id === 'lupusaria' ? 'Service reachable' : 'Running'}</dt>
               <dd>{module.running ? 'Yes' : 'No'}</dd>
             </div>
+            {module.id === 'lupusaria' ? (
+              <div><dt>Bot</dt><dd>{lupusAriaStatus(module)}</dd></div>
+            ) : null}
             <div>
               <dt>Mode</dt>
               <dd>{modeLabel(module.mode)}</dd>
@@ -1947,7 +1978,7 @@ function ModuleActionBar({ module, onStart, onOpen, onRefresh }: { module: Modul
           Start service mode
         </button>
       ) : null}
-      {module.running ? (
+      {module.running && !(module.id === 'lupusaria' && module.mode === 'service') ? (
         <button type="button" onClick={() => onOpen(module.id)}>
           <ExternalLink aria-hidden="true" />
           Open UI
@@ -2031,6 +2062,23 @@ export default function App() {
   const tuberSwitchRequestedProfileRef = useRef<PendingTuberSwitchProfile | null>(null);
   const tuberSwitchRedeemOverridesRef = useRef<Record<string, boolean>>({});
   const tuberSwitchRedeemBaselineRef = useRef<Record<string, boolean>>({});
+
+  const [lupusActivity, setLupusActivity] = useState<{ text: string; error: boolean }>();
+  async function changeLupusAriaState(start: boolean) {
+    const module = modules.find(item => item.id === 'lupusaria');
+    if (!module?.installed && !module?.running) return;
+    setLupusActivity({ text: start ? 'Starting LupusAria…' : 'Stopping LupusAria…', error: false });
+    try {
+      const result = await setLupusAriaRunning(start);
+      const text = result.success
+        ? (start ? 'LupusAria running.' : 'LupusAria stopped.')
+        : result.error || 'LupusAria did not confirm the requested state.';
+      setLupusActivity({ text, error: !result.success });
+      await refreshDashboardState();
+    } catch {
+      setLupusActivity({ text: 'Could not confirm LupusAria status. Check Diagnostics.', error: true });
+    }
+  }
 
   function setTuberSwitchRedeemOverride(id: string, enabled: boolean) {
     const nextOverrides = { ...tuberSwitchRedeemOverridesRef.current };
@@ -2370,11 +2418,13 @@ export default function App() {
           if (response.requiresConfirmation) {
             setPendingConfirmation(response);
           } else {
+            const result = changeLupusAriaState(true);
             setAnnounceStatus({ ...response, lastRun: new Date().toISOString() });
             if (response.success) {
               resetAnnouncementFieldDrafts.current = true;
               await load(true);
             }
+            await result;
           }
         } catch (error) {
           setAnnounceStatus({ success: false, lastRun: new Date().toISOString(), error: String(error) });
@@ -2387,6 +2437,7 @@ export default function App() {
       void (async () => {
         if (!pendingConfirmation?.confirmationId) return;
         setWorkflowBusy(true);
+        const result = changeLupusAriaState(true);
         try {
           const response = await confirmStreamSignalAnnouncement(pendingConfirmation.confirmationId);
           setPendingConfirmation(null);
@@ -2399,6 +2450,7 @@ export default function App() {
           setPendingConfirmation(null);
           setAnnounceStatus({ success: false, lastRun: new Date().toISOString(), error: String(error) });
         } finally {
+          await result;
           setWorkflowBusy(false);
         }
       })();
@@ -2413,6 +2465,7 @@ export default function App() {
         } catch (error) {
           setEndStreamStatus({ success: false, lastRun: new Date().toISOString(), error: String(error) });
         } finally {
+          await changeLupusAriaState(false);
           setWorkflowBusy(false);
         }
       })();
@@ -2563,6 +2616,7 @@ export default function App() {
             tideReaderWorkflow={tideReaderWorkflow}
             tuberSwitchWorkflow={tuberSwitchWorkflow}
             tideReaderOverlay={tideReaderOverlay}
+            lupusActivity={lupusActivity}
             onOpen={(id) => void runAction(() => openModule(id))}
             onRefresh={() => void refreshDashboardState()}
           />

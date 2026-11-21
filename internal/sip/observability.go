@@ -140,6 +140,10 @@ func decodeResponse(resp *http.Response, out any) (ResponseMetadata, error) {
 	}
 	_ = json.Unmarshal(data, &metadata)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if bot, ok := out.(*BotResponse); ok {
+			// A failed activation can still have saved a preference and returned current state.
+			_ = json.Unmarshal(data, bot)
+		}
 		var failure ErrorResponse
 		_ = json.Unmarshal(data, &failure)
 		// Keep legacy display errors for old servers. Safe metadata is logged separately.
