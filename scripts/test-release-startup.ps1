@@ -19,7 +19,7 @@ $overrides = @{
 }
 # Explicit missing executables prevent auto-start; isolated endpoints prevent
 # discovery of any installed companion. This smoke never posts or applies state.
-foreach ($app in @('STREAMSIGNAL', 'TIDEREADER', 'TUBERSWITCH')) {
+foreach ($app in @('STREAMSIGNAL', 'TIDEREADER', 'TUBERSWITCH', 'LUPUSARIA')) {
     $overrides["LIVEPANEL_${app}_EXECUTABLE"] = Join-Path $smokeRoot "$app-not-installed.exe"
     $overrides["LIVEPANEL_${app}_ENDPOINT"] = 'http://127.0.0.1:1'
 }

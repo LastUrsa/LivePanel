@@ -588,6 +588,17 @@ func moduleDefinitions() []moduleDefinition {
 			Endpoints:      localEndpoints(47040, 47049),
 			Candidates:     tuberSwitchExecutableCandidates,
 		},
+		{
+			ID: "lupusaria", Name: "LupusAria",
+			ExecutableEnv:  "LIVEPANEL_LUPUSARIA_EXECUTABLE",
+			EndpointEnv:    "LIVEPANEL_LUPUSARIA_ENDPOINT",
+			ExecutableName: "LupusAria.exe",
+			Endpoints:      localEndpoints(47050, 47050),
+			Candidates: func() []string {
+				return append(standardInstallCandidates("LupusAria", "LupusAria.exe"),
+					filepath.Join("..", "LupusAria", "build", "bin", "LupusAria.exe"))
+			},
+		},
 	}
 }
 

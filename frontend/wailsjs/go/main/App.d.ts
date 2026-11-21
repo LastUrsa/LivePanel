@@ -73,3 +73,8 @@ export function SetTuberSwitchRedeems(arg1:Array<sip.UpdateRedeemRequest>):Promi
 export function StartModule(arg1:string):Promise<Array<modules.Module>>;
 
 export function UpdateStreamSignalAnnouncementFields(arg1:Array<sip.UpdateAnnouncementFieldRequest>):Promise<sip.SuccessResponse>;
+
+export function GetLupusAriaFeatures(): Promise<import('../../../src/lib/api/livepanel').LupusAriaResponse>;
+export function GetLupusAriaLogs(): Promise<import('../../../src/lib/api/livepanel').LupusAriaResponse>;
+export function SetLupusAriaFeature(id: string, enabled: boolean): Promise<import('../../../src/lib/api/livepanel').LupusAriaResponse>;
+export function SetLupusAriaRunning(start: boolean): Promise<import('../../../src/lib/api/livepanel').LupusAriaResponse>;

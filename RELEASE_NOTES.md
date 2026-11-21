@@ -2,6 +2,13 @@
 
 Release notes are part of the LivePanel release process. Before publishing a release, add a matching `## vX.Y.Z` section here. The release workflow publishes that section as the GitHub Release body and fails if it is missing or empty.
 
+## Unreleased
+
+- Adds LupusAria to Stream Setup, Module Locations, and Diagnostics. Go Live and End Stream report the bot’s outcome separately from StreamSignal.
+- Adds a LupusAria drawer with grouped feature switches, saved and effective states, inline errors, and recent operational logs.
+- Aligns the four setup cards in a responsive grid and widens the default window to 1260 pixels.
+- Updates Go to 1.26.11 to address the standard-library vulnerability reported by `govulncheck`.
+
 ## v1.0.1
 
 ### OBS readiness fix

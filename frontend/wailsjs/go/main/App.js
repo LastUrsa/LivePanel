@@ -141,3 +141,19 @@ export function StartModule(arg1) {
 export function UpdateStreamSignalAnnouncementFields(arg1) {
   return window['go']['main']['App']['UpdateStreamSignalAnnouncementFields'](arg1);
 }
+
+export function GetLupusAriaFeatures() {
+  return window['go']['main']['App']['GetLupusAriaFeatures']();
+}
+
+export function GetLupusAriaLogs() {
+  return window['go']['main']['App']['GetLupusAriaLogs']();
+}
+
+export function SetLupusAriaFeature(id, enabled) {
+  return window['go']['main']['App']['SetLupusAriaFeature'](id, enabled);
+}
+
+export function SetLupusAriaRunning(start) {
+  return window['go']['main']['App']['SetLupusAriaRunning'](start);
+}

@@ -10,6 +10,10 @@ vi.mock('./lib/api/livepanel', async (importOriginal) => {
   return {
     ...actual,
     activateStreamSignalProfile: vi.fn(),
+    getLupusAriaFeatures: vi.fn(),
+    getLupusAriaLogs: vi.fn(),
+    setLupusAriaFeature: vi.fn(),
+    setLupusAriaRunning: vi.fn(),
     activateTideReaderProfile: vi.fn(),
     activateTuberSwitchProfile: vi.fn(),
     announceStreamSignal: vi.fn(),
@@ -360,14 +364,16 @@ describe('Dashboard', () => {
   it('shows offline app status without module lifecycle actions', () => {
     renderDashboard([moduleFixture({ running: false, healthy: false, mode: '', healthStatus: 'offline' }), tideReaderModuleFixture(), tuberSwitchModuleFixture()]);
 
-    expect(screen.getByText('StreamSignal unavailable')).toBeInTheDocument();
+    const card = screen.getByRole('heading', { name: 'StreamSignal' }).closest('article')!;
+    expect(within(card).getByText('Unavailable')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Start$/i })).not.toBeInTheDocument();
   });
 
   it('keeps unresolved apps visible in setup without adding module cards', () => {
     renderDashboard([moduleFixture({ installed: false, running: false, healthy: false, mode: '', healthStatus: 'offline' }), tideReaderModuleFixture(), tuberSwitchModuleFixture()]);
 
-    expect(screen.getByText('StreamSignal unavailable')).toBeInTheDocument();
+    const card = screen.getByRole('heading', { name: 'StreamSignal' }).closest('article')!;
+    expect(within(card).getByText('Unavailable')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Modules' })).not.toBeInTheDocument();
   });
 
@@ -962,6 +968,72 @@ describe('App workflows', () => {
       executableConfigFixture({ id: 'tidereader', name: 'TideReader', executablePath: 'D:/Apps/TideReader.Desktop.exe', resolvedPath: 'D:/Apps/TideReader.Desktop.exe', pathSource: 'configured' }),
     ]);
     vi.mocked(api.clearModuleExecutablePath).mockResolvedValue([executableConfigFixture()]);
+  });
+
+  it('starts and stops LupusAria through the stream controls', async () => {
+    const user = userEvent.setup();
+    const modules = [moduleFixture(), moduleFixture({
+      id: 'lupusaria', name: 'LupusAria', capabilities: ['bot-lifecycle'], status: { botState: 'idle' },
+    })];
+    vi.mocked(api.listModules).mockResolvedValue(modules);
+    vi.mocked(api.refreshModules).mockResolvedValue(modules);
+    vi.mocked(api.announceStreamSignal).mockResolvedValue({ success: true });
+    vi.mocked(api.endStreamSignalStream).mockResolvedValue({ success: false, error: 'Publishing failed.' });
+    vi.mocked(api.setLupusAriaRunning).mockResolvedValue({ success: true });
+
+    render(<App />);
+    const goLive = await screen.findByRole('button', { name: /^Go Live$/i });
+    await waitFor(() => expect(goLive).toBeEnabled());
+    await user.click(goLive);
+    expect(await screen.findByText('LupusAria running.')).toBeInTheDocument();
+    expect(api.setLupusAriaRunning).toHaveBeenCalledWith(true);
+
+    await user.click(screen.getByRole('button', { name: /^End Stream$/i }));
+    expect(await screen.findByText('LupusAria stopped.')).toBeInTheDocument();
+    expect(api.setLupusAriaRunning).toHaveBeenCalledWith(false);
+  });
+
+  it('leaves LupusAria idle when Go Live confirmation is canceled', async () => {
+    const user = userEvent.setup();
+    const modules = [moduleFixture(), moduleFixture({
+      id: 'lupusaria', name: 'LupusAria', capabilities: ['bot-lifecycle'], status: { botState: 'idle' },
+    })];
+    vi.mocked(api.listModules).mockResolvedValue(modules);
+    vi.mocked(api.refreshModules).mockResolvedValue(modules);
+    vi.mocked(api.announceStreamSignal).mockResolvedValue({
+      success: false, requiresConfirmation: true, confirmationId: 'confirm-1',
+    });
+    vi.mocked(api.setLupusAriaRunning).mockClear();
+
+    render(<App />);
+    const goLive = await screen.findByRole('button', { name: /^Go Live$/i });
+    await waitFor(() => expect(goLive).toBeEnabled());
+    await user.click(goLive);
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: /^Cancel$/i }));
+    expect(api.setLupusAriaRunning).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('shows saved and effective feature states and inline errors in the LupusAria drawer', async () => {
+    const user = userEvent.setup();
+    const module = moduleFixture({
+      id: 'lupusaria', name: 'LupusAria', capabilities: ['bot-lifecycle', 'bot-features', 'recent-logs'], status: { botState: 'running' },
+    });
+    const feature = { id: 'raffle', label: 'Raffle', enabled: false, effective: false };
+    vi.mocked(api.getLupusAriaFeatures).mockResolvedValue({ success: true, features: [feature] });
+    vi.mocked(api.getLupusAriaLogs).mockResolvedValue({
+      success: true, logs: [{ at: '2026-11-20T15:00:00Z', level: 'warn', message: 'Raffle verification pending.' }],
+    });
+    vi.mocked(api.setLupusAriaFeature).mockResolvedValue({
+      success: false, error: 'Twitch verification failed.', features: [{ ...feature, enabled: true }],
+    });
+    render(<Dashboard modules={[module]} workflow={workflowFixture()} tideReaderWorkflow={tideReaderWorkflowFixture()} {...actionFixture()} />);
+    await user.click(screen.getByRole('button', { name: 'View LupusAria app details' }));
+    expect(await screen.findByText(/Raffle verification pending/)).toBeInTheDocument();
+    await user.click(await screen.findByRole('switch', { name: 'Raffle' }));
+    expect(await screen.findByText('Twitch verification failed.')).toBeInTheDocument();
+    expect(api.setLupusAriaFeature).toHaveBeenCalledWith('raffle', true);
   });
 
   it('shows immediate publishing errors even when status still reports no activity', async () => {
