@@ -1,4 +1,10 @@
-# LivePanel 1.0.1 Release Validation
+# LivePanel 1.1.0 Release Validation
+
+The 1.1.0 release adds LupusAria through the existing SIP v1 contract. The automated suite covers bot start/stop, canceled Go Live confirmation, the feature drawer, activation errors, and SIP client behavior. Native Windows preview validation uses isolated settings. Live Twitch is outside this validation.
+
+Before tagging, run the manual Release workflow on the candidate commit with version 1.1.0 and publishing disabled. It builds the installer, checks packaged startup and version resources, and verifies release assets. The tag workflow repeats those checks before publishing.
+
+## Historical: LivePanel 1.0.1 Release Validation
 
 Candidate validation: 2026-11-09 (America/New_York).
 

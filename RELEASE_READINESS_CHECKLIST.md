@@ -4,7 +4,7 @@ This maintainer checklist is for LivePanel release candidates, packaging, and fi
 
 ## Current Candidate
 
-Release target: `v1.0.1`; supported companion baseline: StreamSignal, TideReader, and TuberSwitch `v1.0.0` (published stable releases). See [RELEASE_VALIDATION.md](RELEASE_VALIDATION.md) for evidence. Unchecked interactive product/install items are not represented as tested by automated validation.
+Release target `v1.1.0`. Companion baseline is StreamSignal, TideReader, and TuberSwitch `v1.0.0` or later. LupusAria `v1.0.0` or later is optional. See [RELEASE_VALIDATION.md](RELEASE_VALIDATION.md) for evidence. Unchecked interactive product/install items are not represented as tested by automated validation.
 
 ## Release Prep
 
@@ -27,6 +27,9 @@ Release target: `v1.0.1`; supported companion baseline: StreamSignal, TideReader
 - [x] Run `govulncheck ./...`.
 
 ## Product Validation
+
+- [ ] Verify the installed LupusAria service starts without a window, Go Live and End Stream control the bot, and the drawer applies feature changes during a Twitch session.
+
 
 - [ ] Verify LivePanel starts StreamSignal, TideReader, and TuberSwitch in service mode.
 - [ ] Verify each app can be opened with the full UI from LivePanel.

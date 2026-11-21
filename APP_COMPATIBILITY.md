@@ -1,11 +1,12 @@
 # LivePanel App Compatibility
 
-This document tracks the minimum dependent Starsong app versions required by each LivePanel release. Keep the README focused on the current release requirements, and update this matrix whenever a LivePanel release changes its StreamSignal, TideReader, or TuberSwitch requirements.
+This document tracks the minimum dependent Starsong app versions required by each LivePanel release. Keep the README focused on the current release requirements, and update this matrix whenever a LivePanel release changes its StreamSignal, TideReader, TuberSwitch, or LupusAria requirements.
 
 Each matching release note entry should also include the app requirements for that LivePanel version.
 
 | LivePanel Version | StreamSignal | TideReader | TuberSwitch | Notes |
 | --- | --- | --- | --- | --- |
+| v1.1.0 | v1.0.0 or newer | v1.0.0 or newer | v1.0.0 or newer | Optional LupusAria v1.0.0 or newer for headless bot lifecycle, live switches, and logs. SIP protocol remains v1. |
 | v1.0.1 | v1.0.0 or newer | v1.0.0 or newer | v1.0.0 or newer | OBS readiness distinguishes unavailable/retrying connections from connected OBS. TuberSwitch v1.0.1 adds process-aware retries and explicit OBS not-running status. |
 | v1.0.0 | v1.0.0 or newer | v1.0.0 or newer | v1.0.0 or newer | Stable supported baseline with SIP v1 observability, asynchronous publishing, persistent session logs, and current TideReader executable discovery. Older SIP apps retain capability-based fallbacks but are not the supported 1.0 baseline. |
 | v0.2.1 | v0.5.1 or newer | v0.6.0 or newer | v0.7.2 or newer | Fixes OBS readiness ownership and hardens TuberSwitch profile confirmation, partial-failure reporting, and temporary redeem state. |

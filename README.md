@@ -4,27 +4,29 @@ LivePanel is a local desktop control panel for Starsong Tools.
 
 LivePanel brings status, app launching, profiles, and common stream-session actions for StreamSignal, TideReader, TuberSwitch, and LupusAria into one Windows desktop panel.
 
-Today, LivePanel can start StreamSignal, TideReader, and TuberSwitch in service mode, show module status, switch active profiles, send StreamSignal announcements with one-time field edits, run the StreamSignal end-stream workflow, toggle app-level TideReader browser support, temporarily adjust manageable TuberSwitch redeems, and preview the active TideReader overlay without opening the full tool interfaces.
+LivePanel starts companion services and shows their status from one window. Use it to run StreamSignal workflows, preview TideReader’s overlay, manage TuberSwitch redeems, and start, stop, or configure LupusAria’s Twitch bot.
 
 ## App Requirements
 
-LivePanel v1.0.1 supports Windows x64 with Microsoft WebView2 Runtime and the stable companion releases below. Install the companion apps separately. Older SIP/service-mode versions may still be discovered through compatibility fallbacks, but can lack operation metadata or controls; they are outside the 1.0 supported baseline.
+LivePanel v1.1.0 supports Windows x64 with Microsoft WebView2 Runtime and the stable companion releases below. Install the companion apps separately. Older SIP/service-mode versions may still be discovered through compatibility fallbacks, but can lack operation metadata or controls; they are outside the 1.0 supported baseline.
 
 | App | Supported Version |
 | --- | --- |
 | StreamSignal | [v1.0.0](https://github.com/LastUrsa/StreamSignal/releases/tag/v1.0.0) or newer |
 | TideReader | [v1.0.0](https://github.com/LastUrsa/TideReader/releases/tag/v1.0.0) or newer |
 | TuberSwitch | [v1.0.0](https://github.com/LastUrsa/TuberSwitch/releases/tag/v1.0.0) or newer |
+| LupusAria | [v1.0.0](https://github.com/LastUrsa/LupusAria/releases/tag/v1.0.0) or newer, optional |
 
 Update this table for each LivePanel release. Historical per-release requirements are tracked in [APP_COMPATIBILITY.md](./APP_COMPATIBILITY.md), and the matching release notes should repeat the requirements for that release.
 
 ## What LivePanel Does
 
 - Starts StreamSignal, TideReader, TuberSwitch, and LupusAria with `--service`.
-- Opens each app with `--show` when the full UI is needed.
+- Opens supported companion interfaces with `--show` when needed.
 - Shows module health, active profiles, app detail drawers, SIP endpoints, resolved executable paths, capabilities, and raw status payloads.
 - Switches StreamSignal, TideReader, and TuberSwitch profiles for the current stream session.
-- Runs StreamSignal `Go Live` and `End Stream` workflows.
+- Runs StreamSignal `Go Live` and `End Stream` workflows and starts or stops the LupusAria bot with separate results.
+- Offers persistent LupusAria feature switches and recent operational logs in the app details drawer.
 - Lets a user edit StreamSignal announcement fields for a single `Go Live` action without saving those edits back to the StreamSignal profile. Selecting a StreamSignal profile reloads those fields from the active profile/status data.
 - Lets a user toggle TideReader browser support as an app-level setting.
 - Shows TideReader overlay preview data from local now-playing and overlay settings JSON, including Smart Text overflow modes. When TideReader browser support is disabled, browser-sourced now-playing data is hidden from the preview.
@@ -32,7 +34,7 @@ Update this table for each LivePanel release. Historical per-release requirement
 - Marks temporary StreamSignal and TuberSwitch session overrides with a `Manual edit` indicator, and marks TideReader app-level browser support with a `Browser Support On` indicator.
 - Uses a resizable app details drawer for per-app status and manual controls.
 
-LivePanel does not store StreamSignal credentials, TideReader overlay/profile data, TuberSwitch account or avatar settings, profile storage, or destination secrets. Those stay in the owning apps.
+LivePanel does not store StreamSignal credentials, TideReader overlay/profile data, TuberSwitch account or avatar settings, LupusAria credentials, profile storage, or destination secrets. Those stay in the owning apps.
 
 ## Local Connections
 
@@ -79,7 +81,7 @@ http://127.0.0.1:17655/overlay-settings.json
 
 ## Configuration
 
-LivePanel's Settings page includes **Module Locations** controls for StreamSignal, TideReader, TuberSwitch, and future catalogued modules. Users can paste an executable path, browse for the executable, or clear a saved override to return to auto-detection.
+LivePanel's Settings page includes **Module Locations** controls for StreamSignal, TideReader, TuberSwitch, and LupusAria. Users can paste an executable path, browse for the executable, or clear a saved override to return to auto-detection.
 
 Executable path resolution order is:
 
@@ -97,6 +99,7 @@ Standard Windows install paths checked by auto-detection are:
 %ProgramFiles%\Starsong Tools\TideReader\TideReader.exe
 %ProgramFiles%\Starsong Tools\TideReader\TideReader.Desktop.exe (legacy fallback)
 %ProgramFiles%\Starsong Tools\TuberSwitch\TuberSwitch.exe
+%ProgramFiles%\Starsong Tools\LupusAria\LupusAria.exe
 ```
 
 Optional environment variables:
@@ -110,6 +113,8 @@ Optional environment variables:
 | `LIVEPANEL_TIDEREADER_OVERLAY_URL` | Explicit local TideReader overlay URL. |
 | `LIVEPANEL_TUBERSWITCH_EXECUTABLE` | Explicit path to `TuberSwitch.exe`. |
 | `LIVEPANEL_TUBERSWITCH_ENDPOINT` | Explicit local TuberSwitch SIP endpoint. |
+| `LIVEPANEL_LUPUSARIA_EXECUTABLE` | Explicit path to `LupusAria.exe`. |
+| `LIVEPANEL_LUPUSARIA_ENDPOINT` | Explicit local LupusAria SIP endpoint. |
 | `LIVEPANEL_CONFIG_PATH` | Explicit path for LivePanel's persisted config JSON. Mostly useful for tests/dev. |
 | `STREAMSIGNAL_ENV` | Passed through to StreamSignal when LivePanel starts it. Use `dev` for the StreamSignal dev data store. |
 
@@ -306,7 +311,7 @@ TideReader early startup diagnostics are written to:
 
 ## LupusAria
 
-Install a LupusAria build that supports SIP v1 and configure Twitch in its desktop app first. LivePanel discovers `LupusAria.exe` and checks `http://127.0.0.1:47050`. **Settings → Module Locations** can override the executable. The `LIVEPANEL_LUPUSARIA_EXECUTABLE` and `LIVEPANEL_LUPUSARIA_ENDPOINT` environment variables can override discovery.
+Install LupusAria 1.0.0 or later, configure Twitch in its desktop app, and close it before launching service mode. LivePanel discovers `LupusAria.exe` and checks `http://127.0.0.1:47050`. **Settings → Module Locations** can override the executable. The `LIVEPANEL_LUPUSARIA_EXECUTABLE` and `LIVEPANEL_LUPUSARIA_ENDPOINT` environment variables can override discovery.
 
 **Go Live** starts the chat bot once the action is committed. **End Stream** stops the bot and leaves the service available. The stream activity area shows LupusAria's outcome separately from StreamSignal's. Select the details icon on the LupusAria card to change persistent feature switches and inspect recent warnings and errors. Diagnostics shows service availability and the bot's reported state. If the service cannot start, check `logs/sip-startup.log` beside the LupusAria configuration.
 
@@ -314,7 +319,7 @@ Install a LupusAria build that supports SIP v1 and configure Twitch in its deskt
 
 LivePanel forwards action IDs as `X-Request-ID` and publishing idempotency keys. It uses asynchronous publishing only when StreamSignal advertises `async-publishing`, polls the returned operation within the existing five-minute client budget, and never retries a publishing POST automatically. Structured destination results distinguish confirmed publication from failed follow-up work or unknown publication. Safe operation IDs, owner session IDs, error codes and per-destination outcomes are added to the persistent timeline without copying raw messages or content.
 
-TuberSwitch operation confirmation IDs replace refresh-count confirmation when available, with a bounded 30-second wait; older apps retain the existing compatibility behavior. All additive metadata is optional for legacy app versions. The [common protocol contract](./SIP_OBSERVABILITY_V1.md) is identical to the contract in the companion apps’ v1.0.0 tags. Application version 1.0.1 retains SIP protocol version 1.
+TuberSwitch operation confirmation IDs replace refresh-count confirmation when available, with a bounded 30-second wait; older apps retain the existing compatibility behavior. All additive metadata is optional for legacy app versions. The [common protocol contract](./SIP_OBSERVABILITY_V1.md) is identical to the contract in the companion apps’ v1.0.0 tags. LivePanel 1.1.0 retains SIP protocol version 1.
 
 
 ## 1.0 Validation
